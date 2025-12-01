@@ -1,0 +1,143 @@
+@import "tailwindcss";
+
+/* background */
+html,
+body {
+  background-color: #f4f4f9;
+}
+
+/* NAVBAR -------------------------------------------------------------------------------- */
+
+/* NAVIGATION BASE */
+.nav-link {
+  position: relative;
+  padding-bottom: 4px;
+  cursor: pointer;
+  transition: color 0.3s ease;
+}
+
+.nav-link:hover {
+  transform: scale(1.18);
+}
+/* ACTIVE BORDER */
+.nav-link.active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -4px;
+  height: 3px;
+  width: 100%;
+  background-color: #2563eb; /* blue-600 */
+  border-radius: 3px;
+}
+/* CTA BUTTON */
+.btn-cta {
+  background: linear-gradient(90deg, #2563eb, #1d4ed8);
+  color: white !important;
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+/* Jika navbar masih di BERANDA → border putih */
+header.text-white .nav-link.active::after {
+  background-color: white;
+}
+
+/* Jika navbar scroll → border biru */
+header.text-gray-900 .nav-link.active::after {
+  background-color: #2563eb;
+}
+
+/* NAVBAR DI BERANDA (belum scroll) → garis bawah putih */
+.navbar.nav-top .nav-link.active::after {
+  background-color: white !important;
+}
+
+/* NAVBAR SAAT SCROLL → garis bawah biru */
+.navbar.nav-scrolled .nav-link.active::after {
+  background-color: #2563eb !important;
+}
+
+/* SECTION SCROLL OFFSET */
+section[id] {
+  scroll-margin-top: 60px;
+}
+
+/* SLIDESHOW ------------------------------------------------------------------------- */
+
+.slideshow-image {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  object-fit: cover;
+  width: 100%;
+  height: 100%;
+  transition: opacity 1s ease-in-out;
+}
+
+.slideshow-image.active {
+  opacity: 1;
+}
+
+/* old animation still allowed to coexist */
+.slide-1,
+.slide-2,
+.slide-3 {
+  animation: fadeSlide 12s infinite;
+}
+
+@keyframes fadeSlide {
+  0% {
+    opacity: 0;
+    transform: scale(1.02);
+  }
+  6% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  33% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  39% {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* DESKTOP HOVER */
+@media (min-width: 768px) {
+  .nav-link:hover {
+    transform: scale(1.08);
+  }
+}
+
+/* MOBILE FIX - NO HOVER SCALE */
+@media (max-width: 768px) {
+  .nav-link:hover {
+    transform: none !important;
+  }
+}
+/* =======================
+   MOBILE MENU TEXT COLOR
+   ======================= */
+
+/* Di BERANDA → teks putih */
+.mobile-top .nav-link {
+  color: white !important;
+}
+
+/* Di SECTION LAIN → teks hitam */
+.mobile-scrolled .nav-link {
+  color: black !important;
+}
+
+/* Hover tetap biru */
+.mobile-top .nav-link:hover,
+.mobile-scrolled .nav-link:hover {
+  color: #2563eb !important;
+}
