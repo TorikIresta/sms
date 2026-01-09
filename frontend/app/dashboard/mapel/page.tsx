@@ -4,30 +4,60 @@ import { useEffect, useState } from "react";
 import { PlusCircle, Upload, Pencil, Trash2, Search } from "lucide-react";
 import * as XLSX from "xlsx";
 
-type Mapel = { id: number; kode_mapel: string; nama_mapel: string };
+/* =======================
+   TYPES
+======================= */
+type Mapel = {
+  id: number;
+  kode_mapel: string;
+  nama_mapel: string;
+};
 
+type ExcelRow = {
+  NAMA: string;
+};
+
+/* =======================
+   COMPONENT
+======================= */
 export default function DataMapelPage() {
+  const API = process.env.NEXT_PUBLIC_API_URL;
+
   const [listMapel, setListMapel] = useState<Mapel[]>([]);
   const [search, setSearch] = useState("");
 
+  // Form
   const [nama, setNama] = useState("");
   const [kode, setKode] = useState("");
   const [editId, setEditId] = useState<number | null>(null);
 
+  // UI
   const [modal, setModal] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // ========================================
-  // FETCH MAPEL
-  // ========================================
+  /* =======================
+     HELPERS
+  ======================= */
+  const resetForm = () => {
+    setNama("");
+    setKode("");
+    setEditId(null);
+  };
+
+  /* =======================
+     FETCH MAPEL
+  ======================= */
   const fetchMapel = async () => {
     try {
-      const res = await fetch("https://api.smkislampermatasari2.sch.id/mapel");
-      const data = await res.json();
-      setListMapel(data);
+      const res = await fetch(`${API}/mapel`);
+      if (!res.ok) throw new Error("Fetch failed");
+
+      const data = (await res.json()) as Mapel[];
+      setListMapel(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error(err);
       alert("Gagal memuat daftar mapel!");
+      setListMapel([]);
     }
   };
 
@@ -35,26 +65,27 @@ export default function DataMapelPage() {
     fetchMapel();
   }, []);
 
-  // Filter pencarian
+  /* =======================
+     FILTER SEARCH
+  ======================= */
   const filteredMapel = listMapel.filter(
     (m) =>
       m.nama_mapel.toLowerCase().includes(search.toLowerCase()) ||
       m.kode_mapel.toLowerCase().includes(search.toLowerCase())
   );
 
-  // ========================================
-  // TAMBAH MAPEL (ambil kode otomatis)
-  // ========================================
+  /* =======================
+     ADD MAPEL (AUTO KODE)
+  ======================= */
   const openModalAdd = async () => {
-    setNama("");
-    setEditId(null);
+    resetForm();
 
     try {
-      const res = await fetch(
-        "https://api.smkislampermatasari2.sch.id/mapel/next-kode"
-      );
+      const res = await fetch(`${API}/mapel/next-kode`);
+      if (!res.ok) throw new Error();
+
       const data = await res.json();
-      setKode(data.kode);
+      setKode(data.kode ?? "");
     } catch {
       alert("Gagal mendapatkan kode otomatis");
       setKode("");
@@ -63,9 +94,9 @@ export default function DataMapelPage() {
     setModal(true);
   };
 
-  // ========================================
-  // EDIT MAPEL
-  // ========================================
+  /* =======================
+     EDIT MAPEL
+  ======================= */
   const openModalEdit = (id: number) => {
     const m = listMapel.find((x) => x.id === id);
     if (!m) return;
@@ -76,43 +107,41 @@ export default function DataMapelPage() {
     setModal(true);
   };
 
-  // ========================================
-  // IMPORT EXCEL (hanya kolom NAMA)
-  // ========================================
-  const handleImportExcel = (e: any) => {
+  /* =======================
+     IMPORT EXCEL
+     (kolom: NAMA)
+  ======================= */
+  const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
 
-    reader.onload = async (evt: any) => {
+    reader.onload = async (evt) => {
       try {
-        const workbook = XLSX.read(evt.target.result, { type: "binary" });
+        const data = evt.target?.result;
+        if (!data) return;
+
+        const workbook = XLSX.read(data, { type: "binary" });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows: any[] = XLSX.utils.sheet_to_json(sheet);
+        const rows = XLSX.utils.sheet_to_json<ExcelRow>(sheet);
 
-        const valid = rows.every((r) => r.NAMA);
-
-        if (!valid) {
-          return alert("Format Excel SALAH!\nGunakan minimal kolom: NAMA");
+        if (!rows.length || rows.some((r) => !r.NAMA)) {
+          alert("Format Excel SALAH!\nGunakan minimal kolom: NAMA");
+          return;
         }
 
-        for (const row of rows) {
-          const nama_mapel = String(row.NAMA).trim();
-
-          const res = await fetch(
-            "https://api.smkislampermatasari2.sch.id/mapel",
-            {
+        await Promise.all(
+          rows.map((row) =>
+            fetch(`${API}/mapel`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ nama_mapel }),
-            }
-          );
-
-          if (!res.ok) {
-            console.error("GAGAL IMPORT:", nama_mapel);
-          }
-        }
+              body: JSON.stringify({
+                nama_mapel: String(row.NAMA).trim(),
+              }),
+            })
+          )
+        );
 
         alert("Import selesai!");
         fetchMapel();
@@ -125,84 +154,90 @@ export default function DataMapelPage() {
     reader.readAsBinaryString(file);
   };
 
-  // ========================================
-  // SIMPAN MAPEL
-  // ========================================
+  /* =======================
+     SAVE MAPEL
+  ======================= */
   const handleSave = async () => {
-    if (!nama.trim()) return alert("Nama mapel wajib diisi!");
+    if (!nama.trim()) {
+      alert("Nama mapel wajib diisi!");
+      return;
+    }
 
     try {
       setLoading(true);
 
-      if (editId) {
-        // UPDATE
-        const res = await fetch(
-          `https://api.smkislampermatasari2.sch.id/mapel/${editId}`,
-          {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ kode_mapel: kode, nama_mapel: nama }),
-          }
+      const url = editId ? `${API}/mapel/${editId}` : `${API}/mapel`;
+
+      const method = editId ? "PUT" : "POST";
+
+      const body = editId
+        ? { kode_mapel: kode, nama_mapel: nama }
+        : { nama_mapel: nama };
+
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        throw new Error(
+          editId ? "Gagal memperbarui mapel" : "Gagal menambah mapel"
         );
-
-        if (!res.ok) throw new Error("Gagal memperbarui mapel");
-
-        alert("Mapel berhasil diperbarui");
-      } else {
-        // CREATE (kode otomatis dari server)
-        const res = await fetch(
-          "https://api.smkislampermatasari2.sch.id/mapel",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ nama_mapel: nama }),
-          }
-        );
-
-        if (!res.ok) throw new Error("Gagal menambah mapel");
-
-        alert("Mapel berhasil ditambahkan");
       }
+
+      alert(
+        editId ? "Mapel berhasil diperbarui" : "Mapel berhasil ditambahkan"
+      );
 
       setModal(false);
       fetchMapel();
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Terjadi kesalahan");
     } finally {
       setLoading(false);
     }
   };
 
-  // ========================================
-  // HAPUS MAPEL
-  // ========================================
+  /* =======================
+     DELETE MAPEL
+  ======================= */
   const handleDelete = async (id: number) => {
     if (!confirm("Hapus mata pelajaran ini?")) return;
+
     try {
-      await fetch(`https://api.smkislampermatasari2.sch.id/mapel/${id}`, {
+      const res = await fetch(`${API}/mapel/${id}`, {
         method: "DELETE",
       });
+
+      if (!res.ok) throw new Error();
+
       fetchMapel();
     } catch (err) {
+      console.error(err);
       alert("Gagal menghapus mapel");
     }
   };
 
   // ========================================
-  // UI (STYLE PUNYA KAMU, TIDAK DIUBAH SEDIKITPUN)
+  // RENDER
   // ========================================
   return (
     <div className="p-4">
       <h1 className="text-2xl font-bold mb-4">Daftar Mata Pelajaran</h1>
 
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center space-x-2">
+      {/* ACTION BAR */}
+      <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
+        {/* LEFT ACTIONS */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
           <label
             htmlFor="file-upload"
-            className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded cursor-pointer hover:bg-green-700"
+            className="flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2 rounded cursor-pointer hover:bg-green-700 w-full sm:w-auto"
           >
-            <Upload className="w-5 h-5" /> Upload Mapel
+            <Upload className="w-5 h-5" />
+            <span>Upload Mapel</span>
           </label>
+
           <input
             id="file-upload"
             type="file"
@@ -213,62 +248,72 @@ export default function DataMapelPage() {
 
           <button
             onClick={openModalAdd}
-            className="flex items-center cursor-pointer space-x-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer w-full sm:w-auto"
           >
             <PlusCircle className="w-5 h-5" />
             <span>Tambah Mapel</span>
           </button>
         </div>
 
-        <div className="flex items-center border rounded px-2">
-          <Search className="w-5 h-5 text-gray-500" />
+        {/* SEARCH */}
+        <div className="flex items-center border rounded px-2 w-full sm:w-64">
+          <Search className="w-5 h-5 text-gray-500 shrink-0" />
           <input
             type="text"
             placeholder="Cari mapel..."
-            className="p-2 outline-none"
+            className="p-2 outline-none w-full"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
       </div>
 
-      <div className="bg-white shadow-[0_0_2px_rgba(0,0,0,0.5)] rounded-sm overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-blue-600 text-white">
+      {/* TABLE */}
+      <div className="bg-white shadow-[0_0_2px_rgba(0,0,0,0.5)] rounded-sm overflow-x-auto">
+        <table className="w-full min-w-[700px] text-sm border-collapse">
+          <thead className="bg-blue-600 text-white uppercase text-xs">
             <tr>
-              <th className="p-3 text-left">No</th>
-              <th className="p-3 border-l border-gray-200 text-left">Kode</th>
-              <th className="p-3 border-l border-gray-200 text-left">
+              <th className="p-3 text-left w-12">No</th>
+              <th className="p-3 text-left border-l border-gray-200 w-32">
+                Kode
+              </th>
+              <th className="p-3 text-left border-l border-gray-200">
                 Nama Mata Pelajaran
               </th>
-              <th className="p-3 border-l border-gray-200 w-32">Aksi</th>
+              <th className="p-3 text-center border-l border-gray-200 w-28">
+                Aksi
+              </th>
             </tr>
           </thead>
 
-          <tbody>
+          <tbody className="divide-y divide-gray-200">
             {filteredMapel.map((m, i) => (
               <tr
                 key={m.id}
-                className="odd:bg-white border-b border-gray-300 even:bg-gray-100 hover:bg-blue-200"
+                className="odd:bg-white even:bg-gray-50 hover:bg-blue-100 transition-colors"
               >
                 <td className="p-3">{i + 1}</td>
                 <td className="p-3 border-l border-gray-200">{m.kode_mapel}</td>
                 <td className="p-3 border-l border-gray-200">{m.nama_mapel}</td>
 
-                <td className="p-3 border-l border-gray-200 text-center flex gap-2 justify-center">
-                  <button
-                    onClick={() => openModalEdit(m.id)}
-                    className="p-1 bg-yellow-400 text-white rounded"
-                  >
-                    <Pencil className="w-4 h-4" />
-                  </button>
+                <td className="p-2 border-l border-gray-200">
+                  <div className="flex justify-center gap-2">
+                    <button
+                      onClick={() => openModalEdit(m.id)}
+                      className="p-2 bg-yellow-400 hover:bg-yellow-500 text-white rounded cursor-pointer"
+                      title="Edit"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
 
-                  <button
-                    onClick={() => handleDelete(m.id)}
-                    className="p-1 bg-red-500 text-white rounded"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                    <button
+                      onClick={() => handleDelete(m.id)}
+                      className="p-2 bg-red-500 hover:bg-red-600 text-white rounded cursor-pointer"
+                      title="Hapus"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -276,8 +321,8 @@ export default function DataMapelPage() {
             {filteredMapel.length === 0 && (
               <tr>
                 <td
-                  className="p-3 border text-center text-gray-500 italic"
                   colSpan={4}
+                  className="p-4 text-center text-gray-500 italic"
                 >
                   Tidak ada data
                 </td>
@@ -287,10 +332,11 @@ export default function DataMapelPage() {
         </table>
       </div>
 
+      {/* MODAL */}
       {modal && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white p-6 rounded shadow w-full max-w-md space-y-3">
-            <h2 className="text-xl font-bold mb-2">
+            <h2 className="text-xl font-bold">
               {editId ? "Edit Mapel" : "Tambah Mapel"}
             </h2>
 
@@ -310,16 +356,16 @@ export default function DataMapelPage() {
               onChange={(e) => setNama(e.target.value)}
             />
 
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-2 pt-2">
               <button
-                className="px-3 py-1 bg-gray-300 cursor-pointer rounded"
+                className="px-4 py-2 bg-gray-300 cursor-pointer rounded"
                 onClick={() => setModal(false)}
               >
                 Batal
               </button>
 
               <button
-                className="px-3 py-1 bg-blue-600 cursor-pointer text-white rounded"
+                className="px-4 py-2 bg-blue-600 cursor-pointer text-white rounded"
                 onClick={handleSave}
               >
                 Simpan

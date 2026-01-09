@@ -6,9 +6,9 @@ import { saveAs } from "file-saver";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-// =====================
-// TYPES
-// =====================
+/* =====================
+   TYPES
+===================== */
 type StudentEntry = {
   nis: string;
   nama: string;
@@ -16,9 +16,22 @@ type StudentEntry = {
   kelas_id?: number;
   jurusan_id?: number;
 };
-type Mapel = { id: number; kode_mapel?: string; nama_mapel: string };
-type Kelas = { id: number; nama_kelas: string };
-type Jurusan = { id: number; nama_jurusan: string };
+
+type Mapel = {
+  id: number;
+  kode_mapel?: string;
+  nama_mapel: string;
+};
+
+type Kelas = {
+  id: number;
+  nama_kelas: string;
+};
+
+type Jurusan = {
+  id: number;
+  nama_jurusan: string;
+};
 
 type StudentMonthRec = {
   year: number;
@@ -31,24 +44,42 @@ type MonthResult = {
   days: number;
   year: number;
   month: number;
-  students: { nis: string; statusByDate: Record<string, string> }[];
+  students: {
+    nis: string;
+    statusByDate: Record<string, string>;
+  }[];
 };
 
-// =====================
-// HELPERS
-// =====================
-function monthName(m: number) {
-  return new Date(2020, m - 1, 1).toLocaleString(undefined, { month: "long" });
-}
+/* =====================
+   HELPERS
+===================== */
+const monthName = (m: number) =>
+  new Date(2020, m - 1, 1).toLocaleString(undefined, { month: "long" });
 
-function pad(n: number) {
-  return String(n).padStart(2, "0");
-}
+const pad = (n: number) => String(n).padStart(2, "0");
 
-// =====================
-// COMPONENT
-// =====================
+const daysInMonth = (year: number, month: number) =>
+  new Date(year, month, 0).getDate();
+
+const countStatus = (statusByDate: Record<string, string>) => {
+  const result = { hadir: 0, izin: 0, sakit: 0, alfa: 0 };
+
+  Object.values(statusByDate).forEach((s) => {
+    if (s === "hadir") result.hadir++;
+    else if (s === "izin") result.izin++;
+    else if (s === "sakit") result.sakit++;
+    else if (s === "alfa") result.alfa++;
+  });
+
+  return result;
+};
+
+/* =====================
+   COMPONENT
+===================== */
 export default function RekapPage() {
+  const API = process.env.NEXT_PUBLIC_API_URL;
+
   // maps NIS -> Nama
   const [studentsMap, setStudentsMap] = useState<Record<string, string>>({});
 
@@ -57,112 +88,73 @@ export default function RekapPage() {
   const [jurusanList, setJurusanList] = useState<Jurusan[]>([]);
   const [mapelList, setMapelList] = useState<Mapel[]>([]);
 
-  // selected filters (store ids as strings)
-  const [selectedKelasId, setSelectedKelasId] = useState<string>("");
-  const [selectedJurusanId, setSelectedJurusanId] = useState<string>("");
-  const [selectedMapelId, setSelectedMapelId] = useState<string>("");
+  // selected filters
+  const [selectedKelasId, setSelectedKelasId] = useState("");
+  const [selectedJurusanId, setSelectedJurusanId] = useState("");
+  const [selectedMapelId, setSelectedMapelId] = useState("");
 
   // bulan / tahun
-  const [bulan, setBulan] = useState<number>(new Date().getMonth() + 1);
-  const [tahun, setTahun] = useState<number>(new Date().getFullYear());
+  const [bulan, setBulan] = useState(new Date().getMonth() + 1);
+  const [tahun, setTahun] = useState(new Date().getFullYear());
 
   // hasil rekap
   const [data, setData] = useState<MonthResult | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // tanggal merah dari API
+  // tanggal merah
   const [tanggalMerah, setTanggalMerah] = useState<string[]>([]);
 
-  // modal multi-bulan per siswa
+  // modal siswa
   const [modalOpen, setModalOpen] = useState(false);
   const [modalNis, setModalNis] = useState("");
   const [modalMonths, setModalMonths] = useState<StudentMonthRec[]>([]);
 
-  // ==========================================
-  // 1) Load siswa, kelas, jurusan, mapel
-  // ==========================================
+  /* =====================
+     LOAD INITIAL DATA
+  ===================== */
   useEffect(() => {
     const loadInitial = async () => {
       try {
         setLoading(true);
 
-        const [sres, kres, jres, mres] = await Promise.all([
-          fetch("https://api.smkislampermatasari2.sch.id/students").catch(
-            () => null
-          ),
-          fetch("https://api.smkislampermatasari2.sch.id/kelas").catch(
-            () => null
-          ),
-          fetch("https://api.smkislampermatasari2.sch.id/jurusan").catch(
-            () => null
-          ),
-          fetch("https://api.smkislampermatasari2.sch.id/mapel").catch(
-            () => null
-          ),
+        const [sRes, kRes, jRes, mRes] = await Promise.all([
+          fetch(`${API}/students`),
+          fetch(`${API}/kelas`),
+          fetch(`${API}/jurusan`),
+          fetch(`${API}/mapel`),
         ]);
 
-        // students -> build map NIS->nama and kelas set
-        if (sres && sres.ok) {
-          const sjson: StudentEntry[] = await sres.json();
+        if (sRes.ok) {
+          const students: StudentEntry[] = await sRes.json();
           const map: Record<string, string> = {};
-          const kelasSet = new Set<string>();
-          sjson.forEach((r) => {
-            map[r.nis] = r.nama;
-            if (r.nama_kelas) kelasSet.add(r.nama_kelas);
-          });
+          students.forEach((s) => (map[s.nis] = s.nama));
           setStudentsMap(map);
-
-          // if kelas list not provided by /kelas endpoint, use names from students
-          if (!kres || !kres.ok) {
-            const names = Array.from(kelasSet).sort();
-            setKelasList(names.map((n, i) => ({ id: i + 1, nama_kelas: n })));
-            if (!selectedKelasId && names.length > 0) setSelectedKelasId("1");
-          }
         }
 
-        // kelas from /kelas (preferred)
-        if (kres && kres.ok) {
-          const kjson: Kelas[] = await kres.json();
-          setKelasList(kjson);
-          if (!selectedKelasId && kjson.length > 0)
-            setSelectedKelasId(String(kjson[0].id));
+        if (kRes.ok) {
+          const k = (await kRes.json()) as Kelas[];
+          setKelasList(k);
+          if (!selectedKelasId && k[0]) setSelectedKelasId(String(k[0].id));
         }
 
-        // jurusan
-        if (jres && jres.ok) {
-          const jjson: Jurusan[] = await jres.json();
-          setJurusanList(jjson);
-          if (!selectedJurusanId && jjson.length > 0)
-            setSelectedJurusanId(String(jjson[0].id));
+        if (jRes.ok) {
+          const j = (await jRes.json()) as Jurusan[];
+          setJurusanList(j);
+          if (!selectedJurusanId && j[0]) setSelectedJurusanId(String(j[0].id));
         }
 
-        // mapel -> normalized shape
-        if (mres && mres.ok) {
-          const mjson = await mres.json();
-          // if backend returns array of strings -> map to ids
-          if (
-            Array.isArray(mjson) &&
-            mjson.length > 0 &&
-            typeof mjson[0] === "string"
-          ) {
-            const mapped: Mapel[] = (mjson as string[]).map((name, idx) => ({
-              id: idx + 1,
-              kode_mapel: `MPL${String(idx + 1).padStart(2, "0")}`,
-              nama_mapel: name,
-            }));
-            setMapelList(mapped);
-            if (!selectedMapelId && mapped.length > 0)
-              setSelectedMapelId(String(mapped[0].id));
-          } else if (Array.isArray(mjson)) {
-            const mapped: Mapel[] = (mjson as any[]).map((it) => ({
-              id: it.id,
-              kode_mapel: it.kode_mapel ?? it.kode ?? "",
-              nama_mapel: it.nama_mapel ?? it.nama ?? String(it),
-            }));
-            setMapelList(mapped);
-            if (!selectedMapelId && mapped.length > 0)
-              setSelectedMapelId(String(mapped[0].id));
-          }
+        if (mRes.ok) {
+          const raw = await mRes.json();
+          const mapped: Mapel[] = Array.isArray(raw)
+            ? raw.map((it: any, idx: number) => ({
+                id: it.id ?? idx + 1,
+                kode_mapel: it.kode_mapel ?? it.kode,
+                nama_mapel: it.nama_mapel ?? it.nama ?? String(it),
+              }))
+            : [];
+          setMapelList(mapped);
+          if (!selectedMapelId && mapped[0])
+            setSelectedMapelId(String(mapped[0].id));
         }
       } catch (err) {
         console.error("loadInitial error", err);
@@ -175,9 +167,9 @@ export default function RekapPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ==========================================
-  // 2) Load tanggal merah (libur nasional)
-  // ==========================================
+  /* =====================
+     LOAD HOLIDAYS
+  ===================== */
   useEffect(() => {
     const loadHolidays = async () => {
       try {
@@ -185,67 +177,55 @@ export default function RekapPage() {
           `https://dayoffapi.vercel.app/api?year=${tahun}`
         );
         if (!res.ok) return;
+
         const json = await res.json();
         const normalized = Array.isArray(json)
           ? json.map((it: any) => {
-              const parts = (it.date || "").split("-");
-              const y = parts[0] ?? "";
-              const m = pad(Number(parts[1] ?? 0));
-              const d = pad(Number(parts[2] ?? 0));
-              return `${y}-${m}-${d}`;
+              const [y, m, d] = String(it.date || "").split("-");
+              return `${y}-${pad(Number(m))}-${pad(Number(d))}`;
             })
           : [];
         setTanggalMerah(normalized);
       } catch (err) {
-        console.warn("Tidak dapat memuat tanggal merah", err);
+        console.warn("Gagal memuat tanggal merah", err);
       }
     };
 
     loadHolidays();
   }, [tahun]);
 
-  // ==========================================
-  // helper - days in month
-  // ==========================================
-  function daysInMonth(year: number, month: number) {
-    return new Date(year, month, 0).getDate();
-  }
-
-  // ==========================================
-  // 3) LOAD REKAP BULAN (pakai ids)
-  // ==========================================
+  /* =====================
+     LOAD REKAP BULAN
+  ===================== */
   const loadMonth = async () => {
-    if (!selectedKelasId || !selectedJurusanId || !selectedMapelId) return;
+    if (!selectedKelasId || !selectedJurusanId || !selectedMapelId) {
+      setData(null);
+      return;
+    }
 
     try {
       setLoading(true);
-      const q =
-        `kelas_id=${encodeURIComponent(selectedKelasId)}` +
-        `&jurusan_id=${encodeURIComponent(selectedJurusanId)}` +
-        `&mapel_id=${encodeURIComponent(selectedMapelId)}` +
-        `&bulan=${bulan}&tahun=${tahun}`;
 
-      const res = await fetch(
-        `https://api.smkislampermatasari2.sch.id/rekap/month?${q}`
-      );
+      const query = new URLSearchParams({
+        kelas_id: selectedKelasId,
+        jurusan_id: selectedJurusanId,
+        mapel_id: selectedMapelId,
+        bulan: String(bulan),
+        tahun: String(tahun),
+      });
+
+      const res = await fetch(`${API}/rekap/month?${query.toString()}`);
       if (!res.ok) {
-        console.warn(
-          "rekap/month fetch failed",
-          await res.text().catch(() => "(no body)")
-        );
         setData(null);
         return;
       }
 
       const json = await res.json();
-      // normalize: if backend returns days/year/month + students array
-      if (!json || typeof json !== "object" || !Array.isArray(json.students)) {
-        console.warn("Unexpected rekap/month shape:", json);
+      if (!json?.students) {
         setData(null);
         return;
       }
 
-      // ensure days property exists, fallback with helper
       if (!json.days) {
         json.days = daysInMonth(
           Number(json.year || tahun),
@@ -262,112 +242,243 @@ export default function RekapPage() {
     }
   };
 
-  // auto reload when filters change
   useEffect(() => {
-    if (selectedKelasId && selectedJurusanId && selectedMapelId) {
-      loadMonth();
-    } else {
-      setData(null);
-    }
+    loadMonth();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedKelasId, selectedJurusanId, selectedMapelId, bulan, tahun]);
 
-  // ==========================================
-  // 4) modal per siswa (multi-month)
-  // ==========================================
+  /* =====================
+     MODAL SISWA
+  ===================== */
   const openStudentModal = async (nis: string) => {
     setModalOpen(true);
     setModalNis(nis);
 
     try {
-      const startMonth = bulan - 4 >= 1 ? bulan - 4 : 1;
+      const startMonth = Math.max(1, bulan - 4);
       const start = `${tahun}-${pad(startMonth)}`;
       const end = `${tahun}-${pad(bulan)}`;
-      const q = `nis=${encodeURIComponent(nis)}&start=${encodeURIComponent(
-        start
-      )}&end=${encodeURIComponent(end)}`;
 
-      const res = await fetch(
-        `https://api.smkislampermatasari2.sch.id/rekap/siswa?${q}`
-      );
+      const query = new URLSearchParams({
+        nis,
+        start,
+        end,
+      });
+
+      const res = await fetch(`${API}/rekap/siswa?${query.toString()}`);
       if (!res.ok) {
-        console.warn("rekap/siswa failed", res.status);
         setModalMonths([]);
         return;
       }
+
       const json = await res.json();
-      const months = Array.isArray(json.months) ? json.months : [];
-      setModalMonths(months);
+      setModalMonths(Array.isArray(json.months) ? json.months : []);
     } catch (err) {
       console.error("openStudentModal error", err);
       setModalMonths([]);
     }
   };
 
-  // ==========================================
-  // helpers: isSunday / tanggalMerah / statusClass
-  // ==========================================
-  function isSunday(y: number, m: number, d: number) {
-    return new Date(y, m - 1, d).getDay() === 0;
-  }
+  /* =====================
+     STATUS HELPERS
+  ===================== */
+  const isSunday = (y: number, m: number, d: number) =>
+    new Date(y, m - 1, d).getDay() === 0;
 
-  function isTanggalMerahFunc(y: number, m: number, d: number) {
-    return tanggalMerah.includes(`${y}-${pad(m)}-${pad(d)}`);
-  }
+  const isTanggalMerahFunc = (y: number, m: number, d: number) =>
+    tanggalMerah.includes(`${y}-${pad(m)}-${pad(d)}`);
 
   const statusClass = (s?: string) => {
-    if (!s) return "";
-    if (s === "hadir") return "bg-green-600 text-white";
-    if (s === "izin") return "bg-yellow-400 text-black";
-    if (s === "sakit") return "bg-blue-600 text-white";
-    if (s === "alfa") return "bg-red-600 text-white";
-    if (s === "telat" || s === "terlambat") return "bg-purple-600 text-white";
-    return "";
+    switch (s) {
+      case "hadir":
+        return "bg-green-600 text-white";
+      case "izin":
+        return "bg-yellow-400 text-black";
+      case "sakit":
+        return "bg-blue-600 text-white";
+      case "alfa":
+        return "bg-red-600 text-white";
+      default:
+        return "";
+    }
   };
 
-  // ==========================================
-  // 5) EXPORT XLSX / PDF (tidy)
-  // ==========================================
+  const statusToSymbol = (status?: string) => {
+    switch (status) {
+      case "hadir":
+        return "H";
+      case "izin":
+        return "I";
+      case "sakit":
+        return "S";
+      case "alfa":
+        return "A";
+      default:
+        return "";
+    }
+  };
+
+  /* =====================
+   EXPORT XLSX
+===================== */
   const exportExcel = () => {
     if (!data) return;
-    const rows = data.students.map((s) => {
-      const row: any = { NIS: s.nis, Nama: studentsMap[s.nis] || s.nis };
+
+    //  Header
+    const headers: string[] = ["No", "NIS", "Nama"];
+
+    for (let d = 1; d <= data.days; d++) {
+      headers.push(`T${d}`);
+    }
+
+    headers.push("H", "I", "S", "A");
+
+    //   Rows
+    const rows = data.students.map((s, idx) => {
+      const row: (string | number)[] = [
+        idx + 1,
+        s.nis,
+        studentsMap[s.nis] || s.nis,
+      ];
+
+      // per tanggal → H / I / S / A
       for (let d = 1; d <= data.days; d++) {
         const date = `${data.year}-${pad(data.month)}-${pad(d)}`;
-        row[`T${d}`] = s.statusByDate[date] || "";
+        const status = s.statusByDate[date];
+        row.push(statusToSymbol(status));
       }
+
+      // total
+      const totals = countStatus(s.statusByDate);
+      row.push(totals.hadir, totals.izin, totals.sakit, totals.alfa);
+
       return row;
     });
 
-    const ws = XLSX.utils.json_to_sheet(rows);
+    // Sheet
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+
+    // Column widths
+    ws["!cols"] = [
+      { wch: 5 }, // No
+      { wch: 15 }, // NIS
+      { wch: 30 }, // Nama
+      ...Array.from({ length: data.days }).map(() => ({ wch: 4 })),
+      { wch: 5 }, // H
+      { wch: 5 }, // I
+      { wch: 5 }, // S
+      { wch: 5 }, // A
+    ];
+
+    // Freeze header row
+    ws["!freeze"] = { xSplit: 0, ySplit: 1 };
+
+    // workbook
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Rekap");
+    XLSX.utils.book_append_sheet(wb, ws, "Rekap Absensi");
+
     const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
     saveAs(new Blob([buf]), `rekap-${bulan}-${tahun}.xlsx`);
   };
 
+  /* =====================
+     EXPORT PDF
+  ===================== */
   const exportPDF = () => {
     if (!data) return;
+
     const doc = new jsPDF({ orientation: "landscape" });
+
+    /* ===== HEADER ===== */
+    doc.setFontSize(12);
+    doc.text("Rekap Absensi Siswa", 14, 10);
+    doc.setFontSize(9);
+    doc.text(`Bulan: ${monthName(data.month)} ${data.year}`, 14, 16);
+
+    /* ===== TABLE HEADER ===== */
     const head = [
       [
         "No",
         "NIS",
         "Nama",
         ...Array.from({ length: data.days }, (_, i) => `${i + 1}`),
+        "H",
+        "I",
+        "S",
+        "A",
       ],
     ];
+
+    /* ===== TABLE BODY ===== */
     const body = data.students.map((s, idx) => {
-      const row: any[] = [String(idx + 1), s.nis, studentsMap[s.nis] || s.nis];
+      const row: string[] = [
+        String(idx + 1),
+        s.nis,
+        studentsMap[s.nis] || s.nis,
+      ];
+
       for (let d = 1; d <= data.days; d++) {
         const date = `${data.year}-${pad(data.month)}-${pad(d)}`;
-        row.push(s.statusByDate[date] || "");
+        row.push(statusToSymbol(s.statusByDate[date]));
       }
+
+      const totals = countStatus(s.statusByDate);
+      row.push(
+        String(totals.hadir),
+        String(totals.izin),
+        String(totals.sakit),
+        String(totals.alfa)
+      );
+
       return row;
     });
 
-    autoTable(doc, { head, body, startY: 10, styles: { fontSize: 7 } });
-    doc.save(`rekap-${bulan}-${tahun}.pdf`);
+    /* ===== AUTOTABLE ===== */
+    autoTable(doc, {
+      head,
+      body,
+      startY: 20,
+      styles: {
+        fontSize: 7,
+        halign: "center",
+        valign: "middle",
+      },
+      headStyles: {
+        fillColor: [220, 220, 220],
+        textColor: 0,
+        fontStyle: "bold",
+      },
+      columnStyles: {
+        2: { halign: "left" }, // Nama
+      },
+      didParseCell: (dataCell) => {
+        const v = dataCell.cell.text?.[0];
+
+        // WARNA STATUS
+        if (v === "H") dataCell.cell.styles.fillColor = [22, 163, 74];
+        if (v === "I") dataCell.cell.styles.fillColor = [250, 204, 21];
+        if (v === "S") dataCell.cell.styles.fillColor = [37, 99, 235];
+        if (v === "A") dataCell.cell.styles.fillColor = [220, 38, 38];
+
+        if (["H", "I", "S", "A"].includes(v)) {
+          dataCell.cell.styles.textColor = 255;
+          dataCell.cell.styles.fontStyle = "bold";
+        }
+      },
+    });
+
+    /* ===== FOOTER TANDA TANGAN ===== */
+    const finalY = (doc as any).lastAutoTable.finalY + 10;
+
+    doc.setFontSize(9);
+    doc.text("Mengetahui,", 20, finalY);
+    doc.text("Kepala Sekolah", 20, finalY + 6);
+
+    doc.text("Guru Mata Pelajaran", 220, finalY + 6);
+
+    /* ===== TAMPILKAN PDF DI BROWSER ===== */
+    const pdfBlobUrl = doc.output("bloburl");
+    window.open(pdfBlobUrl, "_blank");
   };
 
   // ==========================================
@@ -378,9 +489,9 @@ export default function RekapPage() {
       <h1 className="text-2xl font-bold mb-3">Rekap Absensi</h1>
 
       {/* FILTER */}
-      <div className="flex flex-wrap gap-2 mb-4 items-center">
+      <div className="flex flex-col sm:flex-row flex-wrap gap-2 mb-4 items-stretch sm:items-center">
         <select
-          className="p-2 cursor-pointer border rounded"
+          className="p-2 cursor-pointer border rounded w-full sm:w-auto"
           value={selectedKelasId}
           onChange={(e) => setSelectedKelasId(e.target.value)}
         >
@@ -392,7 +503,7 @@ export default function RekapPage() {
         </select>
 
         <select
-          className="p-2 cursor-pointer border rounded max-w-[200px]"
+          className="p-2 cursor-pointer border rounded w-full sm:w-auto max-w-full sm:max-w-[200px]"
           value={selectedJurusanId}
           onChange={(e) => setSelectedJurusanId(e.target.value)}
         >
@@ -404,7 +515,7 @@ export default function RekapPage() {
         </select>
 
         <select
-          className="p-2 cursor-pointer border rounded max-w-[200px]"
+          className="p-2 cursor-pointer border rounded w-full sm:w-auto max-w-full sm:max-w-[200px]"
           value={selectedMapelId}
           onChange={(e) => setSelectedMapelId(e.target.value)}
         >
@@ -416,7 +527,7 @@ export default function RekapPage() {
         </select>
 
         <select
-          className="p-2 cursor-pointer border rounded"
+          className="p-2 cursor-pointer border rounded w-full sm:w-auto"
           value={bulan}
           onChange={(e) => setBulan(Number(e.target.value))}
         >
@@ -429,21 +540,23 @@ export default function RekapPage() {
 
         <input
           type="number"
-          className="p-2 cursor-pointer border rounded w-24"
+          className="p-2 cursor-pointer border rounded w-full sm:w-24"
           value={tahun}
           onChange={(e) => setTahun(Number(e.target.value))}
         />
 
         <button
-          className="px-4 py-2 cursor-pointer bg-blue-600 hover:bg-blue-700 text-white rounded"
+          className="px-4 py-2 cursor-pointer bg-blue-600 hover:bg-blue-700 text-white rounded w-full sm:w-auto"
           onClick={loadMonth}
         >
           Tampilkan
         </button>
 
-        <div className="ml-auto flex gap-2">
+        {/* ACTION BUTTONS */}
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto sm:ml-auto">
+          {/* Export Excel */}
           <button
-            className="flex items-center px-2 py-2 gap-2 cursor-pointer bg-green-500 hover:bg-green-600 text-white rounded"
+            className="flex items-center justify-center px-2 py-2 gap-2 cursor-pointer bg-green-500 hover:bg-green-600 text-white rounded w-full sm:w-auto"
             onClick={exportExcel}
           >
             <svg
@@ -469,8 +582,9 @@ export default function RekapPage() {
             Export
           </button>
 
+          {/* Export PDF */}
           <button
-            className="flex items-center px-2 py-2 gap-2 cursor-pointer bg-red-600 hover:bg-red-700 text-white rounded"
+            className="flex items-center justify-center px-2 py-2 gap-2 cursor-pointer bg-red-600 hover:bg-red-700 text-white rounded w-full sm:w-auto"
             onClick={exportPDF}
           >
             <svg
@@ -517,8 +631,9 @@ export default function RekapPage() {
             Export
           </button>
 
+          {/* Button Printer */}
           <button
-            className="flex items-center px-2 py-2 gap-2 cursor-pointer bg-gray-600 hover:bg-gray-800 text-white rounded"
+            className="flex items-center justify-center px-2 py-2 gap-2 cursor-pointer bg-gray-600 hover:bg-gray-800 text-white rounded w-full sm:w-auto"
             onClick={() => window.print()}
           >
             <svg
@@ -538,91 +653,181 @@ export default function RekapPage() {
         </div>
       </div>
 
-      {/* TABLE */}
+      {/* AREA REKAP ABSENSI SISWA*/}
       {data ? (
         <div className="shadow-[0_0_2px_rgba(0,0,0,0.5)] overflow-auto rounded-sm w-full">
-          <table className="print-area w-full m-3 border-collapse table-auto">
-            <thead>
-              <tr className="bg-gray-200">
-                <th className="p-1 border">No</th>
-                <th className="p-1 border">NIS</th>
-                <th className="p-1 border min-w-[300px] whitespace-nowrap">
-                  Nama
-                </th>
+          {/* ================= PRINT AREA ================= */}
+          <div className="print-area m-3">
+            {/* ===== HEADER LAPORAN ===== */}
+            <div className="print-header">
+              <div className="text-center mb-2">
+                <div className="font-semibold text-md">
+                  LAPORAN ABSENSI SISWA
+                </div>
+                <div className="text-xs mt-1">
+                  Kelas:{" "}
+                  {
+                    kelasList.find((k) => k.id == Number(selectedKelasId))
+                      ?.nama_kelas
+                  }{" "}
+                  | Jurusan:{" "}
+                  {
+                    jurusanList.find((j) => j.id == Number(selectedJurusanId))
+                      ?.nama_jurusan
+                  }{" "}
+                  | Mapel:{" "}
+                  {
+                    mapelList.find((m) => m.id == Number(selectedMapelId))
+                      ?.nama_mapel
+                  }{" "}
+                  | Bulan: {monthName(bulan)} {tahun}
+                </div>
+              </div>
+              <hr />
+            </div>
+            {/* ===== TABLE LAPORAN ===== */}
+            <table className="w-full border-collapse table-auto">
+              {/* thead + tbody */}
+              <thead>
+                <tr className="bg-gray-200">
+                  <th className="p-1 border">No</th>
+                  <th className="p-1 border">NIS</th>
+                  <th className="p-1 border min-w-[300px] whitespace-nowrap">
+                    Nama
+                  </th>
 
-                {Array.from({ length: data.days }).map((_, i) => {
-                  const d = i + 1;
-                  return (
-                    <th
-                      key={i}
-                      className={`p-1 border text-xs min-w-[25px] text-center ${
-                        isSunday(data.year, data.month, d) ||
-                        isTanggalMerahFunc(data.year, data.month, d)
-                          ? "bg-red-200"
-                          : ""
-                      }`}
-                    >
-                      {d}
-                    </th>
-                  );
-                })}
-              </tr>
-            </thead>
-
-            <tbody className="text-xs">
-              {Array.isArray(data?.students) && data.students.length > 0 ? (
-                data.students.map((s, idx) => (
-                  <tr key={s.nis}>
-                    <td className="p-1 border">{idx + 1}</td>
-                    <td className="p-1 border">{s.nis}</td>
-                    <td className="p-1 border">
-                      <button
-                        onClick={() => openStudentModal(s.nis)}
-                        className="text-blue-600 cursor-pointer underline"
+                  {/* TANGGAL */}
+                  {Array.from({ length: data.days }).map((_, i) => {
+                    const d = i + 1;
+                    return (
+                      <th
+                        key={i}
+                        className={`p-1 border text-xs min-w-[25px] text-center ${
+                          isSunday(data.year, data.month, d) ||
+                          isTanggalMerahFunc(data.year, data.month, d)
+                            ? "bg-red-200"
+                            : ""
+                        }`}
                       >
-                        {studentsMap[s.nis] || s.nis}
-                      </button>
-                    </td>
+                        {d}
+                      </th>
+                    );
+                  })}
 
-                    {Array.from({ length: data.days }).map((_, i) => {
-                      const d = i + 1;
-                      const date = `${data.year}-${pad(data.month)}-${pad(d)}`;
-                      const status = s.statusByDate[date];
-                      const isHoliday =
-                        isSunday(data.year, data.month, d) ||
-                        isTanggalMerahFunc(data.year, data.month, d);
-
-                      return (
-                        <td
-                          key={i}
-                          className={`p-1 border text-center min-w-[25px] ${
-                            isHoliday ? "bg-red-100" : ""
-                          }`}
-                        >
-                          <div
-                            className={`px-2 py-0.5 text-xs rounded ${statusClass(
-                              status
-                            )}`}
-                          >
-                            {status ? status.charAt(0).toUpperCase() : ""}
-                          </div>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td
-                    colSpan={data?.days ? data.days + 3 : 5}
-                    className="p-3 text-center text-gray-600"
-                  >
-                    Tidak ada data absensi.
-                  </td>
+                  {/* TOTAL */}
+                  <th className="p-1 border text-xs text-center bg-green-100">
+                    H
+                  </th>
+                  <th className="p-1 border text-xs text-center bg-yellow-100">
+                    I
+                  </th>
+                  <th className="p-1 border text-xs text-center bg-blue-100">
+                    S
+                  </th>
+                  <th className="p-1 border text-xs text-center bg-red-100">
+                    A
+                  </th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="text-xs">
+                {Array.isArray(data.students) && data.students.length > 0 ? (
+                  data.students.map((s, idx) => {
+                    const totals = countStatus(s.statusByDate);
+
+                    return (
+                      <tr key={s.nis}>
+                        <td className="p-1 border">{idx + 1}</td>
+                        <td className="p-1 border">{s.nis}</td>
+                        <td className="p-1 border">
+                          <button
+                            onClick={() => openStudentModal(s.nis)}
+                            className="text-blue-600 cursor-pointer underline"
+                          >
+                            {studentsMap[s.nis] || s.nis}
+                          </button>
+                        </td>
+
+                        {/* STATUS PER TANGGAL */}
+                        {Array.from({ length: data.days }).map((_, i) => {
+                          const d = i + 1;
+                          const date = `${data.year}-${pad(data.month)}-${pad(
+                            d
+                          )}`;
+                          const status = s.statusByDate[date];
+                          const isHoliday =
+                            isSunday(data.year, data.month, d) ||
+                            isTanggalMerahFunc(data.year, data.month, d);
+
+                          return (
+                            <td
+                              key={i}
+                              className={`p-1 border text-center min-w-[25px] ${
+                                isHoliday ? "bg-red-100" : ""
+                              }`}
+                            >
+                              <div
+                                className={`px-2 py-0.5 text-xs rounded ${statusClass(
+                                  status
+                                )}`}
+                              >
+                                {status ? status.charAt(0).toUpperCase() : ""}
+                              </div>
+                            </td>
+                          );
+                        })}
+
+                        {/* TOTAL PER SISWA */}
+                        <td className="p-1 border text-center font-semibold bg-green-50">
+                          {totals.hadir}
+                        </td>
+                        <td className="p-1 border text-center font-semibold bg-yellow-50">
+                          {totals.izin}
+                        </td>
+                        <td className="p-1 border text-center font-semibold bg-blue-50">
+                          {totals.sakit}
+                        </td>
+                        <td className="p-1 border text-center font-semibold bg-red-50">
+                          {totals.alfa}
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td
+                      colSpan={data.days + 7}
+                      className="p-3 text-center text-gray-600"
+                    >
+                      Tidak ada data absensi.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+            {/* ===== FOOTER LAPORAN ===== */}
+            <div className="print-footer mt-6 text-sm">
+              <div className="grid grid-cols-2">
+                {/* KETERANGAN */}
+                <div>
+                  <div className="font-semibold mb-1">Keterangan:</div>
+                  <div>H = Hadir</div>
+                  <div>I = Izin</div>
+                  <div>S = Sakit</div>
+                  <div>A = Alfa</div>
+                </div>
+
+                {/* TANDA TANGAN */}
+                <div className="text-center">
+                  <div className="mb-16">Guru Mata Pelajaran</div>
+                  <div className="font-semibold">
+                    ( ........................................ )
+                  </div>
+                  <div>NIP.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          {/* ================= END PRINT AREA ================= */}
         </div>
       ) : (
         <div className="text-gray-600">Memuat...</div>
@@ -710,6 +915,8 @@ export default function RekapPage() {
           @page {
             size: landscape;
             margin: 10;
+            margin-right: 20;
+            margin-top: 12;
           }
 
           @media print {
@@ -730,7 +937,7 @@ export default function RekapPage() {
             .print-area {
               position: absolute !important;
               top: 10px !important;
-              left: 10px !important;
+              left: 5px !important;
               width: auto !important;
               overflow: visible !important;
               -webkit-print-color-adjust: exact;
@@ -772,6 +979,13 @@ export default function RekapPage() {
               color: inherit !important;
               text-decoration: none !important;
               box-shadow: none !important;
+            }
+          }
+
+          //MOBILE BEHAVIOR
+          @media screen and (max-width: 768px) {
+            .print-footer {
+              display: none;
             }
           }
         `}

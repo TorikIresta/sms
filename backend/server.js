@@ -14,9 +14,10 @@ app.use(express.json());
 const pool = mysql.createPool({
   host: "localhost",
   user: "root",
-  password: "",
+  password: "root",
   database: "sms",
   connectionLimit: 10,
+  port: 3307,
 });
 
 // quick ping

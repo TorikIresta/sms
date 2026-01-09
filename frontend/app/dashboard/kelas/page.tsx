@@ -3,35 +3,60 @@
 import { useEffect, useState } from "react";
 import { Plus, Edit2, Trash2 } from "lucide-react";
 
-type Kelas = { id: number; nama_kelas: string };
+/* =======================
+   TYPES
+======================= */
+type Kelas = {
+  id: number;
+  nama_kelas: string;
+};
 
+/* =======================
+   COMPONENT
+======================= */
 export default function KelasPage() {
+  const API = process.env.NEXT_PUBLIC_API_URL;
+
   const [kelasList, setKelasList] = useState<Kelas[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // Modal
   const [openModal, setOpenModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
 
+  // Form
   const [namaKelas, setNamaKelas] = useState("");
 
-  // -------------------------------------------------------
-  // Fetch data kelas
-  // -------------------------------------------------------
+  /* =======================
+     HELPERS
+  ======================= */
+  const resetForm = () => {
+    setNamaKelas("");
+    setIsEditing(false);
+    setEditingId(null);
+  };
+
+  /* =======================
+     FETCH DATA
+  ======================= */
   const fetchKelas = async () => {
     try {
       setLoading(true);
-      const res = await fetch("https://api.smkislampermatasari2.sch.id/kelas");
-      const data = await res.json();
 
-      // pastikan data valid array
-      if (Array.isArray(data)) {
-        setKelasList(data);
-      } else {
+      const res = await fetch(`${API}/kelas`);
+      if (!res.ok) throw new Error("Fetch failed");
+
+      const data = await res.json();
+      if (!Array.isArray(data)) {
         console.error("Invalid kelas data:", data);
         setKelasList([]);
+        return;
       }
+
+      setKelasList(data);
     } catch (err) {
+      console.error(err);
       alert("Gagal mengambil data kelas!");
     } finally {
       setLoading(false);
@@ -42,19 +67,14 @@ export default function KelasPage() {
     fetchKelas();
   }, []);
 
-  // -------------------------------------------------------
-  // Modal add
-  // -------------------------------------------------------
+  /* =======================
+     MODAL HANDLERS
+  ======================= */
   const openAddModal = () => {
-    setNamaKelas("");
-    setIsEditing(false);
-    setEditingId(null);
+    resetForm();
     setOpenModal(true);
   };
 
-  // -------------------------------------------------------
-  // Modal edit
-  // -------------------------------------------------------
   const openEditModal = (kelas: Kelas) => {
     setNamaKelas(kelas.nama_kelas);
     setEditingId(kelas.id);
@@ -62,10 +82,10 @@ export default function KelasPage() {
     setOpenModal(true);
   };
 
-  // -------------------------------------------------------
-  // Submit form (ADD / EDIT)
-  // -------------------------------------------------------
-  const handleSubmit = async (e: any) => {
+  /* =======================
+     SUBMIT (ADD / EDIT)
+  ======================= */
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!namaKelas.trim()) {
@@ -76,13 +96,10 @@ export default function KelasPage() {
     try {
       setLoading(true);
 
-      let url = "https://api.smkislampermatasari2.sch.id/kelas";
-      let method = "POST";
+      const url =
+        isEditing && editingId ? `${API}/kelas/${editingId}` : `${API}/kelas`;
 
-      if (isEditing && editingId) {
-        url = `https://api.smkislampermatasari2.sch.id/kelas/${editingId}`;
-        method = "PUT";
-      }
+      const method = isEditing ? "PUT" : "POST";
 
       const res = await fetch(url, {
         method,
@@ -90,62 +107,59 @@ export default function KelasPage() {
         body: JSON.stringify({ nama_kelas: namaKelas }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
 
       if (!res.ok) {
         alert("Gagal menyimpan data");
         return;
       }
 
-      // MODE EDIT → update item di state
       if (isEditing && editingId) {
+        // UPDATE LOCAL STATE
         setKelasList((prev) =>
           prev.map((k) =>
-            k.id === editingId ? { id: editingId, nama_kelas: namaKelas } : k
+            k.id === editingId ? { ...k, nama_kelas: namaKelas } : k
           )
         );
-
         alert("Kelas berhasil diperbarui");
-      }
-      // MODE ADD → push item baru
-      else {
+      } else if (data?.id) {
+        // ADD LOCAL STATE
         setKelasList((prev) => [
           ...prev,
           { id: data.id, nama_kelas: data.nama_kelas },
         ]);
-
         alert("Kelas berhasil ditambahkan");
       }
 
-      // reset modal
       setOpenModal(false);
-      setNamaKelas("");
-      setIsEditing(false);
-      setEditingId(null);
+      resetForm();
     } catch (err) {
-      alert("Terjadi kesalahan");
       console.error(err);
+      alert("Terjadi kesalahan");
     } finally {
       setLoading(false);
     }
   };
 
-  // -------------------------------------------------------
-  // Delete kelas
-  // -------------------------------------------------------
+  /* =======================
+     DELETE
+  ======================= */
   const handleDelete = async (id: number) => {
     if (!confirm("Yakin ingin menghapus kelas?")) return;
 
     try {
       setLoading(true);
-      await fetch(`https://api.smkislampermatasari2.sch.id/kelas/${id}`, {
+
+      const res = await fetch(`${API}/kelas/${id}`, {
         method: "DELETE",
       });
 
-      setKelasList((prev) => prev.filter((k) => k.id !== id));
+      if (!res.ok) throw new Error("Delete failed");
 
+      setKelasList((prev) => prev.filter((k) => k.id !== id));
       alert("Kelas berhasil dihapus");
     } catch (err) {
+      console.error(err);
       alert("Gagal menghapus kelas");
     } finally {
       setLoading(false);

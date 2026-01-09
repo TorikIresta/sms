@@ -3,13 +3,21 @@
 import { useEffect, useState } from "react";
 import { UserPlus, Edit2, Trash2, Search } from "lucide-react";
 
+/* =======================
+   TYPES
+======================= */
 type Jurusan = {
   id: number;
   kode_jurusan: string;
   nama_jurusan: string;
 };
 
+/* =======================
+   COMPONENT
+======================= */
 export default function JurusanPage() {
+  const API = process.env.NEXT_PUBLIC_API_URL;
+
   const [jurusan, setJurusan] = useState<Jurusan[]>([]);
   const [search, setSearch] = useState("");
 
@@ -18,23 +26,32 @@ export default function JurusanPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
 
-  // Form
+  // Form (DIBIARKAN SAMA)
   const [kodeJurusan, setKodeJurusan] = useState("");
   const [namaJurusan, setNamaJurusan] = useState("");
 
   const [loading, setLoading] = useState(false);
 
-  // ======================
-  // Fetch Jurusan
-  // ======================
+  /* =======================
+     HELPERS
+  ======================= */
+  const resetForm = () => {
+    setKodeJurusan("");
+    setNamaJurusan("");
+  };
+
+  /* =======================
+     FETCH JURUSAN
+  ======================= */
   const fetchJurusan = async () => {
     try {
-      const res = await fetch(
-        "https://api.smkislampermatasari2.sch.id/jurusan"
-      );
-      const data = await res.json();
+      const res = await fetch(`${API}/jurusan`);
+      if (!res.ok) throw new Error("Fetch failed");
+
+      const data = (await res.json()) as Jurusan[];
       setJurusan(data);
     } catch (err) {
+      console.error(err);
       alert("Gagal mengambil data jurusan");
     }
   };
@@ -43,26 +60,25 @@ export default function JurusanPage() {
     fetchJurusan();
   }, []);
 
+  /* =======================
+     FILTER
+  ======================= */
   const filtered = jurusan.filter(
     (j) =>
       j.nama_jurusan.toLowerCase().includes(search.toLowerCase()) ||
       j.kode_jurusan.toLowerCase().includes(search.toLowerCase())
   );
 
-  // ======================
-  // Open tambah modal
-  // ======================
+  /* =======================
+     MODAL HANDLERS
+  ======================= */
   const openAddModal = () => {
     setIsEditing(false);
     setEditId(null);
-    setKodeJurusan("");
-    setNamaJurusan("");
+    resetForm();
     setOpenModal(true);
   };
 
-  // ======================
-  // Open edit modal
-  // ======================
   const openEditModal = (j: Jurusan) => {
     setIsEditing(true);
     setEditId(j.id);
@@ -71,10 +87,10 @@ export default function JurusanPage() {
     setOpenModal(true);
   };
 
-  // ======================
-  // Simpan
-  // ======================
-  const handleSubmit = async (e: any) => {
+  /* =======================
+     SUBMIT
+  ======================= */
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!kodeJurusan || !namaJurusan) {
@@ -87,42 +103,49 @@ export default function JurusanPage() {
       nama_jurusan: namaJurusan,
     };
 
-    setLoading(true);
+    try {
+      setLoading(true);
 
-    const url = isEditing
-      ? `https://api.smkislampermatasari2.sch.id/jurusan/${editId}`
-      : "https://api.smkislampermatasari2.sch.id/jurusan";
+      const url = isEditing ? `${API}/jurusan/${editId}` : `${API}/jurusan`;
 
-    const method = isEditing ? "PUT" : "POST";
+      const method = isEditing ? "PUT" : "POST";
 
-    const res = await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-    setLoading(false);
-    setOpenModal(false);
+      if (!res.ok) throw new Error("Submit failed");
 
-    if (!res.ok) {
+      setOpenModal(false);
+      fetchJurusan();
+    } catch (err) {
+      console.error(err);
       alert("Terjadi kesalahan");
-      return;
+    } finally {
+      setLoading(false);
     }
-
-    fetchJurusan();
   };
 
-  // ======================
-  // Hapus
-  // ======================
+  /* =======================
+     DELETE
+  ======================= */
   const handleDelete = async (id: number) => {
     if (!confirm("Yakin ingin menghapus jurusan?")) return;
 
-    await fetch(`https://api.smkislampermatasari2.sch.id/jurusan/${id}`, {
-      method: "DELETE",
-    });
+    try {
+      const res = await fetch(`${API}/jurusan/${id}`, {
+        method: "DELETE",
+      });
 
-    fetchJurusan();
+      if (!res.ok) throw new Error("Delete failed");
+
+      fetchJurusan();
+    } catch (err) {
+      console.error(err);
+      alert("Gagal menghapus jurusan");
+    }
   };
 
   // ======================
@@ -130,19 +153,21 @@ export default function JurusanPage() {
   // ======================
   return (
     <div className="p-4">
-      <div className="flex items-center justify-between mb-3">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
         <h1 className="text-2xl font-semibold">Input Jurusan</h1>
 
         <button
           onClick={openAddModal}
-          className="flex items-center bg-blue-600 text-white px-4 py-2 rounded gap-2 cursor-pointer"
+          className="flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded gap-2 cursor-pointer w-full sm:w-auto"
         >
-          <UserPlus className="w-5 h-5" /> Tambah Jurusan
+          <UserPlus className="w-5 h-5" />
+          <span>Tambah Jurusan</span>
         </button>
       </div>
 
       {/* SEARCH */}
-      <div className="flex border border-gray-400 rounded pl-2 pr-3 items-center space-x-2 mb-4">
+      <div className="flex border border-gray-400 rounded pl-2 pr-3 items-center gap-2 mb-4">
         <input
           type="text"
           placeholder="Cari jurusan..."
@@ -150,49 +175,66 @@ export default function JurusanPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <Search className="w-5 h-5 text-gray-600" />
+        <Search className="w-5 h-5 text-gray-600 shrink-0" />
       </div>
 
-      {/* TABEL */}
-      <div className="bg-white shadow-[0_0_2px_rgba(0,0,0,0.5)] rounded-sm overflow-auto">
-        <table className="w-full min-w-[600px]">
-          <thead className="bg-blue-600 border-b border-gray-300 text-white">
+      {/* TABLE */}
+      <div className="bg-white shadow-[0_0_2px_rgba(0,0,0,0.5)] rounded-sm overflow-x-auto">
+        <table className="w-full min-w-[600px] border-collapse">
+          <thead className="bg-blue-600 text-white text-sm uppercase">
             <tr>
-              <th className="p-2 p-2 pl-3 text-left">Kode</th>
-              <th className="p-2 pl-3 border-l border-gray-200 text-left">
+              <th className="p-3 text-left font-semibold">Kode</th>
+              <th className="p-3 text-left border-l border-gray-200 font-semibold">
                 Nama Jurusan
               </th>
-              <th className="p-2 pl-3 border-l border-gray-200 text-center">
+              <th className="p-3 text-center border-l border-gray-200 font-semibold w-[160px]">
                 Aksi
               </th>
             </tr>
           </thead>
 
-          <tbody>
+          <tbody className="text-sm divide-y divide-gray-200">
             {filtered.map((j) => (
               <tr
                 key={j.id}
-                className="odd:bg-white border-b border-gray-300 even:bg-gray-100 hover:bg-blue-200"
+                className="odd:bg-white even:bg-gray-50 hover:bg-blue-100 transition-colors"
               >
-                <td className="p-1 pl-3">{j.kode_jurusan}</td>
-                <td className="p-1 pl-3 border-l border-gray-200">
+                <td className="p-3">{j.kode_jurusan}</td>
+
+                <td className="p-3 border-l border-gray-200">
                   {j.nama_jurusan}
                 </td>
 
-                <td className="p-1 pl-3 border-l border-gray-200 text-center">
+                <td className="p-2 border-l border-gray-200">
                   <div className="flex justify-center gap-2">
+                    {/* EDIT */}
                     <button
                       onClick={() => openEditModal(j)}
-                      className="px-2 py-1 bg-yellow-400 text-white rounded flex items-center gap-1 cursor-pointer"
+                      className="
+                      flex items-center gap-1
+                      bg-yellow-400 hover:bg-yellow-500
+                      text-white rounded
+                      px-2 py-1
+                      cursor-pointer text-xs
+                    "
                     >
-                      <Edit2 className="w-4 h-4" /> Edit
+                      <Edit2 className="w-4 h-6" />
+                      <span>Edit</span>
                     </button>
 
+                    {/* HAPUS */}
                     <button
                       onClick={() => handleDelete(j.id)}
-                      className="px-2 py-1 bg-red-500 text-white rounded flex items-center gap-1 cursor-pointer"
+                      className="
+                      flex items-center gap-1
+                      bg-red-500 hover:bg-red-600
+                      text-white rounded
+                      px-2 py-1
+                      cursor-pointer text-xs
+                    "
                     >
-                      <Trash2 className="w-4 h-4" /> Hapus
+                      <Trash2 className="w-4 h-6" />
+                      <span>Hapus</span>
                     </button>
                   </div>
                 </td>
@@ -201,7 +243,10 @@ export default function JurusanPage() {
 
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={3} className="p-4 text-center italic">
+                <td
+                  colSpan={3}
+                  className="p-4 text-center italic text-gray-500"
+                >
                   Tidak ada data
                 </td>
               </tr>
@@ -212,7 +257,7 @@ export default function JurusanPage() {
 
       {/* MODAL */}
       {openModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white p-6 rounded-xl w-full max-w-md shadow-lg">
             <h2 className="text-xl font-bold mb-4">
               {isEditing ? "Edit Jurusan" : "Tambah Jurusan"}
@@ -235,7 +280,7 @@ export default function JurusanPage() {
                 onChange={(e) => setNamaJurusan(e.target.value)}
               />
 
-              <div className="flex justify-end gap-2">
+              <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   className="px-4 py-2 bg-gray-300 rounded cursor-pointer"

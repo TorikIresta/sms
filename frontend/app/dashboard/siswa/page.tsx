@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Upload, UserPlus, Search, Edit2, Trash2 } from "lucide-react";
+import { UserPlus, Search, Edit2, Trash2 } from "lucide-react";
 import * as XLSX from "xlsx";
 
+// =======================
+// TYPES
+// =======================
 type Siswa = {
   id: number;
   nis: string;
@@ -16,9 +19,34 @@ type Siswa = {
 };
 
 type Kelas = { id: number; nama_kelas: string };
-type Jurusan = { id: number; nama_jurusan: string; kode_jurusan: string };
+type Jurusan = {
+  id: number;
+  nama_jurusan: string;
+  kode_jurusan: string;
+};
 
+type FormState = {
+  nis: string;
+  nama: string;
+  jk: "L" | "P";
+  kelasId: string;
+  jurusanId: string;
+};
+
+type ExcelRow = {
+  NIS: string;
+  NAMA: string;
+  JK: "L" | "P";
+  KELAS: string;
+  JURUSAN: string;
+};
+
+// =======================
+// COMPONENT
+// =======================
 export default function DataSiswaPage() {
+  const API = process.env.NEXT_PUBLIC_API_URL;
+
   const [students, setStudents] = useState<Siswa[]>([]);
   const [kelasList, setKelasList] = useState<Kelas[]>([]);
   const [jurusanList, setJurusanList] = useState<Jurusan[]>([]);
@@ -29,35 +57,50 @@ export default function DataSiswaPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
 
-  // Form fields
-  const [nis, setNis] = useState("");
-  const [nama, setNama] = useState("");
-  const [jk, setJk] = useState("L");
-  const [kelasId, setKelasId] = useState("");
-  const [jurusanId, setJurusanId] = useState("");
+  // Form (REFactor TANPA ubah UI)
+  const [form, setForm] = useState<FormState>({
+    nis: "",
+    nama: "",
+    jk: "L",
+    kelasId: "",
+    jurusanId: "",
+  });
 
   const [loading, setLoading] = useState(false);
 
-  // ==========================================
-  // FETCH DATA
-  // ==========================================
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 50;
+
+  // =======================
+  // HELPERS
+  // =======================
+  const resetForm = () => {
+    setForm({
+      nis: "",
+      nama: "",
+      jk: "L",
+      kelasId: "",
+      jurusanId: "",
+    });
+  };
+
+  // =======================
+  //   FETCH DATA
+  // =======================
   const fetchAll = async () => {
     try {
       setLoading(true);
 
       const [res1, res2, res3] = await Promise.all([
-        fetch("https://api.smkislampermatasari2.sch.id/students"),
-        fetch("https://api.smkislampermatasari2.sch.id/kelas"),
-        fetch("https://api.smkislampermatasari2.sch.id/jurusan"),
+        fetch(`${API}/students`),
+        fetch(`${API}/kelas`),
+        fetch(`${API}/jurusan`),
       ]);
 
-      const students = await res1.json();
-      const kelas = await res2.json();
-      const jurusan = await res3.json();
-
-      setStudents(students);
-      setKelasList(kelas);
-      setJurusanList(jurusan);
+      setStudents(await res1.json());
+      setKelasList(await res2.json());
+      setJurusanList(await res3.json());
+      setCurrentPage(1);
     } catch (err) {
       console.error(err);
       alert("Gagal memuat data. Pastikan backend berjalan!");
@@ -70,11 +113,15 @@ export default function DataSiswaPage() {
     fetchAll();
   }, []);
 
-  // ==========================================
-  // IMPORT EXCEL
-  // ==========================================
-  const handleImportExcel = (e: any) => {
-    if (kelasList.length === 0 || jurusanList.length === 0) {
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
+
+  // =======================
+  //  IMPORT EXCEL
+  // =======================
+  const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!kelasList.length || !jurusanList.length) {
       alert(
         "Data kelas dan jurusan belum siap. Tolong tunggu sebentar lalu upload ulang."
       );
@@ -86,53 +133,51 @@ export default function DataSiswaPage() {
 
     const reader = new FileReader();
 
-    reader.onload = async (evt: any) => {
-      const bstr = evt.target.result;
+    reader.onload = async (evt) => {
+      const bstr = evt.target?.result;
+      if (!bstr) return;
+
       const workbook = XLSX.read(bstr, { type: "binary" });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet);
+      const jsonData = XLSX.utils.sheet_to_json<ExcelRow>(worksheet);
 
-      const mapped = [];
+      const mapped = jsonData
+        .map((row) => {
+          if (!row.NIS || !row.NAMA || !row.JK) return null;
 
-      for (const row of jsonData) {
-        if (!row.NIS || !row.NAMA || !row.JK) continue;
+          const kelas = kelasList.find(
+            (k) =>
+              k.nama_kelas.trim().toLowerCase() ===
+              row.KELAS.trim().toLowerCase()
+          );
 
-        const kelas = kelasList.find(
-          (k) =>
-            k.nama_kelas.trim().toLowerCase() ===
-            String(row.KELAS).trim().toLowerCase()
-        );
+          const jurusan = jurusanList.find(
+            (j) =>
+              j.nama_jurusan.trim().toLowerCase() ===
+              row.JURUSAN.trim().toLowerCase()
+          );
 
-        const jurusan = jurusanList.find(
-          (j) =>
-            j.nama_jurusan.trim().toLowerCase() ===
-            String(row.JURUSAN).trim().toLowerCase()
-        );
+          if (!kelas || !jurusan) return null;
 
-        if (!kelas || !jurusan) {
-          alert("Kelas atau jurusan tidak ditemukan di database!");
-          console.log("Excel:", row.KELAS, row.JURUSAN);
-          console.log("DB kelas:", kelasList);
-          console.log("DB jurusan:", jurusanList);
-          return;
-        }
+          return {
+            nis: row.NIS,
+            nama: row.NAMA,
+            jk: row.JK,
+            kelas_id: kelas.id,
+            jurusan_id: jurusan.id,
+          };
+        })
+        .filter(Boolean);
 
-        mapped.push({
-          nis: String(row.NIS),
-          nama: String(row.NAMA),
-          jk: row.JK === "L" ? "L" : "P",
-          kelas_id: kelas.id,
-          jurusan_id: jurusan.id,
-        });
-      }
-
-      for (const item of mapped) {
-        await fetch("https://api.smkislampermatasari2.sch.id/students", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(item),
-        });
-      }
+      await Promise.all(
+        mapped.map((item) =>
+          fetch(`${API}/students`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(item),
+          })
+        )
+      );
 
       alert("Import Excel Berhasil!");
       fetchAll();
@@ -141,71 +186,59 @@ export default function DataSiswaPage() {
     reader.readAsBinaryString(file);
   };
 
-  // ==========================================
-  // OPEN MODAL TAMBAH
-  // ==========================================
+  // =======================
+  // MODAL
+  // =======================
   const openAddModal = () => {
     setIsEditing(false);
     setEditingId(null);
-    setNama("");
-    setNis("");
-    setJk("L");
-    setKelasId("");
-    setJurusanId("");
+    resetForm();
     setOpenModal(true);
   };
 
-  // ==========================================
-  // OPEN MODAL EDIT
-  // ==========================================
   const openEditModal = (s: Siswa) => {
     setIsEditing(true);
     setEditingId(s.id);
-    setNama(s.nama);
-    setNis(s.nis);
-    setJk(s.jk);
-    setKelasId(String(s.kelas_id));
-    setJurusanId(String(s.jurusan_id));
+    setForm({
+      nis: s.nis,
+      nama: s.nama,
+      jk: s.jk,
+      kelasId: String(s.kelas_id),
+      jurusanId: String(s.jurusan_id),
+    });
     setOpenModal(true);
   };
 
-  // ==========================================
-  // SIMPAN TAMBAH / EDIT
-  // ==========================================
-  const handleSubmit = async (e: any) => {
+  // =======================
+  // SUBMIT
+  // =======================
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nis || !nama || !kelasId || !jurusanId) {
+
+    if (!form.nis || !form.nama || !form.kelasId || !form.jurusanId) {
       alert("Semua field wajib diisi");
       return;
     }
 
     const payload = {
-      nis,
-      nama,
-      jk,
-      kelas_id: Number(kelasId),
-      jurusan_id: Number(jurusanId),
+      nis: form.nis,
+      nama: form.nama,
+      jk: form.jk,
+      kelas_id: Number(form.kelasId),
+      jurusan_id: Number(form.jurusanId),
     };
 
     try {
       setLoading(true);
 
-      const url = isEditing
-        ? `https://api.smkislampermatasari2.sch.id/students/${editingId}`
-        : "https://api.smkislampermatasari2.sch.id/students";
-
-      const method = isEditing ? "PUT" : "POST";
-
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        alert("Gagal menyimpan data!");
-        return;
-      }
+      await fetch(
+        isEditing ? `${API}/students/${editingId}` : `${API}/students`,
+        {
+          method: isEditing ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
 
       alert(isEditing ? "Berhasil diperbarui" : "Berhasil ditambahkan");
       setOpenModal(false);
@@ -218,41 +251,71 @@ export default function DataSiswaPage() {
     }
   };
 
-  // ==========================================
+  // =======================
   // DELETE
-  // ==========================================
+  // =======================
   const handleDelete = async (id: number) => {
     if (!confirm("Yakin ingin menghapus?")) return;
-
-    await fetch(`https://api.smkislampermatasari2.sch.id/students/${id}`, {
+    await fetch(`${API}/students/${id}`, {
       method: "DELETE",
     });
-
     fetchAll();
   };
 
-  // ==========================================
-  // FILTER SEARCH
-  // ==========================================
+  // =======================
+  // FILTER & PAGINATION
+  // =======================
   const filtered = students.filter(
     (s) =>
       s.nama.toLowerCase().includes(search.toLowerCase()) ||
       s.nis.includes(search)
   );
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+
+  const paginated = filtered.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
+  const getPages = () => {
+    const pages: (number | "...")[] = [];
+    const jump = 5;
+
+    if (totalPages <= 1) return [1];
+
+    pages.push(1);
+
+    if (currentPage > jump + 2) pages.push("...");
+
+    const start = Math.max(2, currentPage - 2);
+    const end = Math.min(totalPages - 1, currentPage + 2);
+
+    for (let i = start; i <= end; i++) pages.push(i);
+
+    if (currentPage < totalPages - (jump + 1)) pages.push("...");
+
+    pages.push(totalPages);
+
+    return pages;
+  };
+
   // ==========================================
   // RENDER
   // ==========================================
   return (
     <div className="p-4 pt-3">
-      <div className="flex items-center justify-between mb-3">
-        <h1 className="text-2xl font-semibold">Input Data Siswa</h1>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 gap-3">
+        <h1 className="text-2xl font-semibold text-center sm:text-left">
+          Input Data Siswa
+        </h1>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
           <label
             htmlFor="file-upload"
-            className="flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded cursor-pointer"
+            className="flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded cursor-pointer w-full sm:w-auto"
           >
+            {/* SVG */}
             <svg
               width="22"
               height="22"
@@ -275,6 +338,7 @@ export default function DataSiswaPage() {
             </svg>
             <span>Import</span>
           </label>
+
           <input
             id="file-upload"
             type="file"
@@ -285,7 +349,7 @@ export default function DataSiswaPage() {
 
           <button
             onClick={openAddModal}
-            className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded cursor-pointer"
+            className="flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded cursor-pointer w-full sm:w-auto"
           >
             <UserPlus className="w-5 h-5" /> <span>Tambah</span>
           </button>
@@ -301,55 +365,67 @@ export default function DataSiswaPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <Search className="w-5 h-5 text-gray-600" />
+        <Search className="w-5 h-5 text-gray-600 shrink-0" />
       </div>
 
       {/* TABLE */}
       <div className="bg-white shadow-[0_0_2px_rgba(0,0,0,0.5)] rounded-sm overflow-auto">
-        <table className="w-full min-w-[600px]">
-          <thead className="bg-blue-600 border-b border-gray-300 text-white">
-            <tr>
-              <th className="p-2 text-left">NIS</th>
-              <th className="p-2 text-left border-l border-gray-200">Nama</th>
-              <th className="p-2 text-left border-l border-gray-200">JK</th>
-              <th className="p-2 text-left border-l border-gray-200">Kelas</th>
-              <th className="p-2 text-left border-l border-gray-200">
-                Jurusan
-              </th>
-              <th className="p-2 text-center border-l border-gray-200">Aksi</th>
+        <table className="w-full min-w-[600px] border-collapse">
+          <thead className="bg-blue-600 text-white">
+            <tr className="text-sm uppercase tracking-wide">
+              <th className="p-3 text-left font-semibold">NIS</th>
+              <th className="p-3 text-left font-semibold">Nama</th>
+              <th className="p-3 text-left font-semibold">JK</th>
+              <th className="p-3 text-left font-semibold">Kelas</th>
+              <th className="p-3 text-left font-semibold">Jurusan</th>
+              <th className="p-3 text-center font-semibold">Aksi</th>
             </tr>
           </thead>
 
-          <tbody>
-            {filtered.map((s) => (
+          <tbody className="divide-y divide-gray-200 text-sm">
+            {paginated.map((s) => (
               <tr
                 key={s.id}
-                className="odd:bg-white border-b border-gray-300 even:bg-gray-100 hover:bg-blue-200"
+                className="odd:bg-white even:bg-gray-50 hover:bg-blue-100 transition-colors"
               >
-                <td className="p-1 pl-2">{s.nis}</td>
-                <td className="p-1 pl-2 border-l border-gray-200">{s.nama}</td>
-                <td className="p-1 pl-2 border-l border-gray-200">{s.jk}</td>
-                <td className="p-1 pl-2 border-l border-gray-200">
-                  {s.nama_kelas}
-                </td>
-                <td className="p-1 pl-2 border-l border-gray-200">
-                  {s.nama_jurusan}
+                <td className="px-3 py-2 whitespace-nowrap">{s.nis}</td>
+
+                <td className="px-3 py-2 font-medium text-gray-800">
+                  {s.nama}
                 </td>
 
-                <td className="p-1 text-center border-l border-gray-200">
+                <td className="px-3 py-2">{s.jk}</td>
+
+                <td className="px-3 py-2">{s.nama_kelas}</td>
+
+                <td className="px-3 py-2">{s.nama_jurusan}</td>
+
+                <td className="px-3 py-2">
                   <div className="flex justify-center gap-2">
+                    {/* EDIT */}
                     <button
                       onClick={() => openEditModal(s)}
-                      className="px-2 py-1 bg-yellow-400 text-white rounded flex items-center gap-1 cursor-pointer"
+                      className="w-9 h-9 sm:w-auto sm:h-auto px-0 sm:px-3 py-0 sm:py-1
+                 bg-yellow-400 hover:bg-yellow-500 text-white rounded
+                 flex items-center justify-center gap-1 cursor-pointer text-xs"
+                      aria-label="Edit"
+                      title="Edit"
                     >
-                      <Edit2 className="w-4 h-4" /> Edit
+                      <Edit2 className="w-4 h-6" />
+                      <span className="hidden sm:inline">Edit</span>
                     </button>
 
+                    {/* HAPUS */}
                     <button
                       onClick={() => handleDelete(s.id)}
-                      className="px-2 py-1 bg-red-500 text-white rounded flex items-center gap-1 cursor-pointer"
+                      className="w-9 h-9 sm:w-auto sm:h-auto px-0 sm:px-3 py-0 sm:py-1
+                 bg-red-500 hover:bg-red-600 text-white rounded
+                 flex items-center justify-center gap-1 cursor-pointer text-xs"
+                      aria-label="Hapus"
+                      title="Hapus"
                     >
-                      <Trash2 className="w-4 h-4" /> Hapus
+                      <Trash2 className="w-4 h-6" />
+                      <span className="hidden sm:inline">Hapus</span>
                     </button>
                   </div>
                 </td>
@@ -358,13 +434,58 @@ export default function DataSiswaPage() {
 
             {filtered.length === 0 && (
               <tr>
-                <td className="p-4 text-center" colSpan={6}>
+                <td colSpan={6} className="p-6 text-center text-gray-500">
                   {loading ? "Memuat..." : "Tidak ada data"}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* PAGINATION */}
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mt-4 gap-3">
+        <div className="text-sm text-gray-600 text-center sm:text-left">
+          Halaman {currentPage} dari {totalPages}
+        </div>
+
+        <div className="flex flex-wrap justify-center sm:justify-end gap-1">
+          <button
+            disabled={currentPage === 1}
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            className="px-3 py-1 border rounded cursor-pointer hover:bg-gray-100 disabled:opacity-50"
+          >
+            Prev
+          </button>
+
+          {getPages().map((p, i) =>
+            p === "..." ? (
+              <span key={i} className="px-3 py-1 text-gray-400">
+                ...
+              </span>
+            ) : (
+              <button
+                key={p}
+                onClick={() => setCurrentPage(p)}
+                className={`px-3 py-1 border cursor-pointer rounded ${
+                  p === currentPage
+                    ? "bg-blue-600 text-white"
+                    : "bg-white hover:bg-gray-100"
+                }`}
+              >
+                {p}
+              </button>
+            )
+          )}
+
+          <button
+            disabled={currentPage === totalPages}
+            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            className="px-3 py-1 border rounded cursor-pointer hover:bg-gray-100 disabled:opacity-50"
+          >
+            Next
+          </button>
+        </div>
       </div>
 
       {/* MODAL */}
@@ -379,21 +500,26 @@ export default function DataSiswaPage() {
               <input
                 className="w-full p-2 border rounded"
                 placeholder="NIS"
-                value={nis}
-                onChange={(e) => setNis(e.target.value)}
+                value={form.nis}
+                onChange={(e) => setForm({ ...form, nis: e.target.value })}
               />
 
               <input
                 className="w-full p-2 border rounded"
                 placeholder="Nama"
-                value={nama}
-                onChange={(e) => setNama(e.target.value)}
+                value={form.nama}
+                onChange={(e) => setForm({ ...form, nama: e.target.value })}
               />
 
               <select
                 className="w-full p-2 border rounded"
-                value={jk}
-                onChange={(e) => setJk(e.target.value)}
+                value={form.jk}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    jk: e.target.value as "L" | "P",
+                  })
+                }
               >
                 <option value="L">Laki-Laki</option>
                 <option value="P">Perempuan</option>
@@ -401,8 +527,8 @@ export default function DataSiswaPage() {
 
               <select
                 className="w-full p-2 border rounded"
-                value={kelasId}
-                onChange={(e) => setKelasId(e.target.value)}
+                value={form.kelasId}
+                onChange={(e) => setForm({ ...form, kelasId: e.target.value })}
               >
                 <option value="">-- Pilih Kelas --</option>
                 {kelasList.map((k) => (
@@ -414,8 +540,13 @@ export default function DataSiswaPage() {
 
               <select
                 className="w-full p-2 border rounded"
-                value={jurusanId}
-                onChange={(e) => setJurusanId(e.target.value)}
+                value={form.jurusanId}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    jurusanId: e.target.value,
+                  })
+                }
               >
                 <option value="">-- Pilih Jurusan --</option>
                 {jurusanList.map((j) => (

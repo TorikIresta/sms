@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Users, Calendar, Save } from "lucide-react";
+import { Save } from "lucide-react";
 
+/* =======================
+   TYPES
+======================= */
 type Student = {
   id: number;
   nis: string;
@@ -15,144 +18,113 @@ type Student = {
 };
 
 type Kelas = { id: number; nama_kelas: string };
-type Jurusan = { id: number; kode_jurusan?: string; nama_jurusan: string };
-type Mapel = { id: number; kode_mapel?: string; nama_mapel: string };
+type Jurusan = { id: number; nama_jurusan: string; kode_jurusan?: string };
+type Mapel = { id: number; nama_mapel: string; kode_mapel?: string };
 
-type AttendanceItem = { nis: string; status: string }; // status: hadir|sakit|izin|alfa
+type AttendanceItem = {
+  nis: string;
+  status: "hadir" | "izin" | "sakit" | "alfa";
+};
 
-function todayYYYYMMDD(date = new Date()) {
+/* =======================
+   HELPERS
+======================= */
+const todayYYYYMMDD = (date = new Date()) => {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
-}
+};
 
+/* =======================
+   COMPONENT
+======================= */
 export default function AbsensiPage() {
-  // data lists
+  const API = process.env.NEXT_PUBLIC_API_URL;
+
+  /* ===== DATA ===== */
+  const [students, setStudents] = useState<Student[]>([]);
   const [kelasList, setKelasList] = useState<Kelas[]>([]);
   const [jurusanList, setJurusanList] = useState<Jurusan[]>([]);
   const [mapelList, setMapelList] = useState<Mapel[]>([]);
-  const [students, setStudents] = useState<Student[]>([]);
 
-  // selected filters (we store ids as strings for <select> values)
-  const [selectedKelasId, setSelectedKelasId] = useState<string>("");
-  const [selectedJurusanId, setSelectedJurusanId] = useState<string>("");
-  const [selectedMapelId, setSelectedMapelId] = useState<string>("");
-
+  /* ===== FILTER ===== */
+  const [selectedKelasId, setSelectedKelasId] = useState("");
+  const [selectedJurusanId, setSelectedJurusanId] = useState("");
+  const [selectedMapelId, setSelectedMapelId] = useState("");
   const [tanggal, setTanggal] = useState(todayYYYYMMDD());
-  const [attendance, setAttendance] = useState<Record<string, string>>({}); // nis -> status
+
+  /* ===== STATE ===== */
+  const [attendance, setAttendance] = useState<
+    Record<string, AttendanceItem["status"]>
+  >({});
   const [loading, setLoading] = useState(false);
 
-  // -------------------------
-  // Fetch initial lists: students, kelas, jurusan, mapel
-  // -------------------------
+  /* =======================
+     FETCH INITIAL DATA
+  ======================= */
   useEffect(() => {
-    const fetchAll = async () => {
+    const fetchInitial = async () => {
       try {
         setLoading(true);
 
-        const [sres, kres, jres, mres] = await Promise.all([
-          fetch("https://api.smkislampermatasari2.sch.id/students").catch(
-            () => null
-          ),
-          fetch("https://api.smkislampermatasari2.sch.id/kelas").catch(
-            () => null
-          ),
-          fetch("https://api.smkislampermatasari2.sch.id/jurusan").catch(
-            () => null
-          ),
-          fetch("https://api.smkislampermatasari2.sch.id/mapel").catch(
-            () => null
-          ),
+        const [sRes, kRes, jRes, mRes] = await Promise.all([
+          fetch(`${API}/students`),
+          fetch(`${API}/kelas`),
+          fetch(`${API}/jurusan`),
+          fetch(`${API}/mapel`),
         ]);
 
-        // students
-        if (sres && sres.ok) {
-          const sdata = (await sres.json()) as Student[];
-          setStudents(sdata);
-        } else {
-          setStudents([]);
+        if (sRes.ok) setStudents(await sRes.json());
+        if (kRes.ok) {
+          const data = await kRes.json();
+          setKelasList(data);
+          if (!selectedKelasId && data[0])
+            setSelectedKelasId(String(data[0].id));
         }
-
-        // kelas
-        if (kres && kres.ok) {
-          const kdata = (await kres.json()) as Kelas[];
-          setKelasList(kdata);
-          if (kdata.length > 0 && !selectedKelasId) {
-            setSelectedKelasId(String(kdata[0].id));
-          }
-        } else {
-          setKelasList([]);
+        if (jRes.ok) {
+          const data = await jRes.json();
+          setJurusanList(data);
+          if (!selectedJurusanId && data[0])
+            setSelectedJurusanId(String(data[0].id));
         }
-
-        // jurusan
-        if (jres && jres.ok) {
-          const jdata = (await jres.json()) as Jurusan[];
-          setJurusanList(jdata);
-          if (jdata.length > 0 && !selectedJurusanId) {
-            setSelectedJurusanId(String(jdata[0].id));
-          }
-        } else {
-          setJurusanList([]);
-        }
-
-        // mapel
-        if (mres && mres.ok) {
-          const mdata = (await mres.json()) as Mapel[];
-          setMapelList(mdata);
-          if (mdata.length > 0 && !selectedMapelId) {
-            setSelectedMapelId(String(mdata[0].id));
-          }
-        } else {
-          // fallback mapel (if backend doesn't provide)
-          const fallback = [
-            { id: -1, kode_mapel: "MTK", nama_mapel: "Matematika" },
-            { id: -2, kode_mapel: "BIN", nama_mapel: "Bahasa Indonesia" },
-          ];
-          setMapelList(fallback);
-          if (!selectedMapelId) setSelectedMapelId(String(fallback[0].id));
+        if (mRes.ok) {
+          const data = await mRes.json();
+          setMapelList(data);
+          if (!selectedMapelId && data[0])
+            setSelectedMapelId(String(data[0].id));
         }
       } catch (err) {
         console.error(err);
-        alert("Gagal memuat data awal. Pastikan backend berjalan!");
+        alert("Gagal memuat data awal");
       } finally {
         setLoading(false);
       }
     };
 
-    fetchAll();
+    fetchInitial();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // -------------------------
-  // Compute studentsOfClass based on selected kelas_id + jurusan_id
-  // (we filter local students array)
-  // -------------------------
+  /* =======================
+     FILTER SISWA
+  ======================= */
   const studentsOfClass = students.filter((s) => {
-    // both selected IDs might be empty initially
     const matchKelas =
-      selectedKelasId === ""
-        ? true
-        : String(s.kelas_id) === String(selectedKelasId);
+      !selectedKelasId || String(s.kelas_id) === selectedKelasId;
     const matchJurusan =
-      selectedJurusanId === ""
-        ? true
-        : String(s.jurusan_id) === String(selectedJurusanId);
-
+      !selectedJurusanId || String(s.jurusan_id) === selectedJurusanId;
     return matchKelas && matchJurusan;
   });
 
-  // -------------------------
-  // When filter (kelas/jurusan/mapel/tanggal) changes, fetch existing absensi record
-  // Expect backend to accept ids: kelas_id, jurusan_id, mapel_id, tanggal
-  // If backend still expects names, you can adjust to send names; current code sends ids.
-  // -------------------------
+  /* =======================
+     FETCH ABSENSI
+  ======================= */
   useEffect(() => {
-    // require all filters to be set (mapel optional? but we require it)
     if (
       !selectedKelasId ||
-      !selectedMapelId ||
       !selectedJurusanId ||
+      !selectedMapelId ||
       !tanggal
     ) {
       setAttendance({});
@@ -163,36 +135,29 @@ export default function AbsensiPage() {
       try {
         setLoading(true);
 
-        const q = `kelas_id=${encodeURIComponent(
-          selectedKelasId
-        )}&jurusan_id=${encodeURIComponent(
-          selectedJurusanId
-        )}&mapel_id=${encodeURIComponent(
-          selectedMapelId
-        )}&tanggal=${encodeURIComponent(tanggal)}`;
+        const query = new URLSearchParams({
+          kelas_id: selectedKelasId,
+          jurusan_id: selectedJurusanId,
+          mapel_id: selectedMapelId,
+          tanggal,
+        });
 
-        const res = await fetch(
-          `https://api.smkislampermatasari2.sch.id/absensi?${q}`
-        );
+        const res = await fetch(`${API}/absensi?${query.toString()}`);
         if (!res.ok) {
-          // if backend returns 404/no record, treat as empty
           setAttendance({});
           return;
         }
 
         const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          const record = data[0];
-          const map: Record<string, string> = {};
-          if (Array.isArray(record.siswa)) {
-            record.siswa.forEach((it: AttendanceItem) => {
-              map[it.nis] = it.status;
-            });
-          }
-          setAttendance(map);
-        } else {
-          setAttendance({});
+        const map: Record<string, AttendanceItem["status"]> = {};
+
+        if (Array.isArray(data?.[0]?.siswa)) {
+          data[0].siswa.forEach((it: AttendanceItem) => {
+            map[it.nis] = it.status;
+          });
         }
+
+        setAttendance(map);
       } catch (err) {
         console.error(err);
         alert("Gagal mengambil data absensi");
@@ -204,18 +169,18 @@ export default function AbsensiPage() {
     fetchAbsensi();
   }, [selectedKelasId, selectedJurusanId, selectedMapelId, tanggal]);
 
-  const setStatus = (nis: string, status: string) => {
+  /* =======================
+     HANDLERS
+  ======================= */
+  const setStatus = (nis: string, status: AttendanceItem["status"]) => {
     setAttendance((prev) => ({ ...prev, [nis]: status }));
   };
 
-  // -------------------------
-  // Save absensi: send kelas_id, jurusan_id, mapel_id, tanggal, siswa[]
-  // backend expected response: { record: { ... } }
-  // -------------------------
   const handleSave = async () => {
-    if (!selectedKelasId) return alert("Pilih kelas terlebih dahulu");
-    if (!selectedJurusanId) return alert("Pilih jurusan terlebih dahulu");
-    if (!selectedMapelId) return alert("Pilih mata pelajaran terlebih dahulu");
+    if (!selectedKelasId || !selectedJurusanId || !selectedMapelId) {
+      alert("Lengkapi filter terlebih dahulu");
+      return;
+    }
 
     const payload = studentsOfClass.map((s) => ({
       nis: s.nis,
@@ -225,61 +190,25 @@ export default function AbsensiPage() {
     try {
       setLoading(true);
 
-      const res = await fetch(
-        "https://api.smkislampermatasari2.sch.id/absensi",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            kelas_id: Number(selectedKelasId),
-            jurusan_id: Number(selectedJurusanId),
-            mapel_id: Number(selectedMapelId),
-            tanggal,
-            siswa: payload,
-          }),
-        }
-      );
+      const res = await fetch(`${API}/absensi`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kelas_id: Number(selectedKelasId),
+          jurusan_id: Number(selectedJurusanId),
+          mapel_id: Number(selectedMapelId),
+          tanggal,
+          siswa: payload,
+        }),
+      });
 
-      // parse response body (may contain error message)
       const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.message || "Gagal menyimpan absensi");
 
-      if (!res.ok) {
-        const msg = out.message || "Gagal menyimpan absensi";
-        throw new Error(msg);
-      }
-
-      // success
-      const record = out.record || {
-        kelas_id: selectedKelasId,
-        jurusan_id: selectedJurusanId,
-        mapel_id: selectedMapelId,
-        tanggal,
-      };
-
-      // for user-friendly message, map ids to names if possible
-      const kelasName =
-        kelasList.find((k) => String(k.id) === String(record.kelas_id))
-          ?.nama_kelas || String(record.kelas_id);
-      const jurusanName =
-        jurusanList.find((j) => String(j.id) === String(record.jurusan_id))
-          ?.nama_jurusan || String(record.jurusan_id);
-      const mapelName =
-        mapelList.find((m) => String(m.id) === String(record.mapel_id))
-          ?.nama_mapel || String(record.mapel_id);
-
-      alert(
-        "Absensi tersimpan untuk " +
-          kelasName +
-          " / " +
-          jurusanName +
-          " - " +
-          mapelName +
-          " tanggal " +
-          record.tanggal
-      );
-    } catch (err: any) {
+      alert("Absensi berhasil disimpan");
+    } catch (err: unknown) {
       console.error(err);
-      alert(err.message || "Terjadi kesalahan saat menyimpan");
+      alert(err instanceof Error ? err.message : "Terjadi kesalahan");
     } finally {
       setLoading(false);
     }
@@ -347,7 +276,7 @@ export default function AbsensiPage() {
           {/* Save Button */}
           <button
             onClick={handleSave}
-            className="flex items-center justify-center space-x-2 px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 w-full md:w-auto h-9"
+            className="flex items-center justify-center cursor-pointer space-x-2 px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 w-full md:w-auto h-9"
             disabled={loading}
           >
             <Save className="w-4 h-4" />

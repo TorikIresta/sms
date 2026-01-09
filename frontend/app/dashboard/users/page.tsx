@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+/* =======================
+   TYPES
+======================= */
 type User = {
   id: number;
   username: string;
@@ -10,7 +13,11 @@ type User = {
   role: string;
 };
 
+/* =======================
+   COMPONENT
+======================= */
 export default function UsersPage() {
+  const API = process.env.NEXT_PUBLIC_API_URL;
   const router = useRouter();
 
   const [users, setUsers] = useState<User[]>([]);
@@ -26,51 +33,64 @@ export default function UsersPage() {
   const [password, setPassword] = useState("");
   const [userRole, setUserRole] = useState("Guru");
 
-  // =============================
-  // CEK ROLE DI LOCAL STORAGE
-  // =============================
+  /* =======================
+     HELPERS
+  ======================= */
+  const resetForm = () => {
+    setUsername("");
+    setPassword("");
+    setUserRole("Guru");
+    setEditingId(null);
+    setIsEditing(false);
+  };
+
+  /* =======================
+     AUTH CHECK
+  ======================= */
   useEffect(() => {
     const token = localStorage.getItem("token");
-    const r = localStorage.getItem("role");
+    const savedRole = localStorage.getItem("role");
 
     if (!token) {
       router.push("/");
       return;
     }
 
-    if (r !== "Super User") {
+    if (savedRole !== "Super User") {
       router.push("/dashboard");
       return;
     }
 
-    setRole(r);
+    setRole(savedRole);
     fetchUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
-  // =============================
-  // GET USERS
-  // =============================
+  /* =======================
+     FETCH USERS
+  ======================= */
   const fetchUsers = async () => {
-    const res = await fetch("https://api.smkislampermatasari2.sch.id/users");
-    const data = await res.json();
-    setUsers(data);
+    try {
+      const res = await fetch(`${API}/users`);
+      if (!res.ok) throw new Error("Fetch users failed");
+
+      const data = (await res.json()) as User[];
+      setUsers(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error(err);
+      alert("Gagal mengambil data user");
+      setUsers([]);
+    }
   };
 
-  // =============================
-  // OPEN ADD MODAL
-  // =============================
+  /* =======================
+     MODAL HANDLERS
+  ======================= */
   const openAddModal = () => {
-    setIsEditing(false);
-    setEditingId(null);
-    setUsername("");
-    setPassword("");
-    setUserRole("Guru");
+    resetForm();
     setOpenModal(true);
   };
 
-  // =============================
-  // OPEN EDIT MODAL
-  // =============================
   const openEditModal = (u: User) => {
     setIsEditing(true);
     setEditingId(u.id);
@@ -80,10 +100,10 @@ export default function UsersPage() {
     setOpenModal(true);
   };
 
-  // =============================
-  // SAVE USER (ADD / EDIT)
-  // =============================
-  const handleSubmit = async (e: any) => {
+  /* =======================
+     SAVE USER (ADD / EDIT)
+  ======================= */
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!username || !password) {
@@ -91,101 +111,124 @@ export default function UsersPage() {
       return;
     }
 
-    const payload = { username, password, role: userRole };
+    const payload = {
+      username,
+      password,
+      role: userRole,
+    };
 
-    const url = isEditing
-      ? `https://api.smkislampermatasari2.sch.id/users/${editingId}`
-      : "https://api.smkislampermatasari2.sch.id/users";
+    try {
+      const url = isEditing ? `${API}/users/${editingId}` : `${API}/users`;
 
-    const method = isEditing ? "PUT" : "POST";
+      const method = isEditing ? "PUT" : "POST";
 
-    const res = await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-    if (!res.ok) {
+      if (!res.ok) {
+        throw new Error("Save user failed");
+      }
+
+      await fetchUsers();
+      setOpenModal(false);
+      resetForm();
+    } catch (err) {
+      console.error(err);
       alert("Gagal menyimpan user!");
-      return;
     }
-
-    await fetchUsers();
-    setOpenModal(false);
   };
 
-  // =============================
-  // DELETE USER
-  // =============================
+  /* =======================
+     DELETE USER
+  ======================= */
   const handleDelete = async (id: number) => {
     if (!confirm("Yakin ingin menghapus user ini?")) return;
 
-    await fetch(`https://api.smkislampermatasari2.sch.id/users/${id}`, {
-      method: "DELETE",
-    });
+    try {
+      const res = await fetch(`${API}/users/${id}`, {
+        method: "DELETE",
+      });
 
-    fetchUsers();
+      if (!res.ok) throw new Error("Delete failed");
+
+      fetchUsers();
+    } catch (err) {
+      console.error(err);
+      alert("Gagal menghapus user!");
+    }
   };
 
+  /* =======================
+   RENDER
+======================= */
   return (
     <div className="p-4">
-      <div className="flex justify-between mb-4">
+      {/* HEADER */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <h1 className="text-2xl font-bold">Manajemen User</h1>
 
         <button
           onClick={openAddModal}
-          className="bg-blue-600 text-white px-4 py-2 rounded cursor-pointer"
+          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded cursor-pointer w-full sm:w-auto"
         >
           + Tambah User
         </button>
       </div>
 
-      <div className="bg-white shadow-[0_0_2px_rgba(0,0,0,0.5)] rounded-sm overflow-auto">
-        <table className="w-full min-w-[600px]">
-          <thead className="bg-blue-600 border-b border-gray-300 text-white">
+      {/* TABLE */}
+      <div className="bg-white shadow-[0_0_2px_rgba(0,0,0,0.5)] rounded-sm overflow-x-auto">
+        <table className="w-full min-w-[700px] border-collapse text-sm">
+          <thead className="bg-blue-600 text-white uppercase text-xs">
             <tr>
-              <th className="p-2 text-left">Username</th>
-              <th className="p-2 text-left border-l border-gray-200">
+              <th className="p-3 text-left">Username</th>
+              <th className="p-3 text-left border-l border-gray-200">
                 Password
               </th>
-              <th className="p-2 text-left border-l border-gray-200">Role</th>
-              <th className="p-2 text-center border-l border-gray-200">Aksi</th>
+              <th className="p-3 text-left border-l border-gray-200">Role</th>
+              <th className="p-3 text-center border-l border-gray-200 w-36">
+                Aksi
+              </th>
             </tr>
           </thead>
 
-          <tbody>
+          <tbody className="divide-y divide-gray-200">
             {users.map((u) => (
               <tr
                 key={u.id}
-                className="odd:bg-white border-b border-gray-300 even:bg-gray-100 hover:bg-blue-200"
+                className="odd:bg-white even:bg-gray-50 hover:bg-blue-100 transition-colors"
               >
-                <td className="p-2 ">{u.username}</td>
-                <td className="p-2 pl-3 border-l border-gray-200">
-                  {u.password}
-                </td>
-                <td className="p-2 pl-3 border-l border-gray-200">{u.role}</td>
+                <td className="p-3">{u.username}</td>
 
-                <td className="p-2 pl-3 text-center border-l border-gray-200">
-                  <button
-                    onClick={() => openEditModal(u)}
-                    className="bg-yellow-500 text-white px-2 py-1 mr-2 rounded cursor-pointer"
-                  >
-                    Edit
-                  </button>
+                <td className="p-3 border-l border-gray-200">{u.password}</td>
 
-                  <button
-                    onClick={() => handleDelete(u.id)}
-                    className="bg-red-600 text-white px-2 py-1 rounded cursor-pointer"
-                  >
-                    Hapus
-                  </button>
+                <td className="p-3 border-l border-gray-200">{u.role}</td>
+
+                <td className="p-2 border-l border-gray-200">
+                  <div className="flex justify-center gap-2">
+                    <button
+                      onClick={() => openEditModal(u)}
+                      className="px-2 py-1 bg-yellow-500 hover:bg-yellow-600 text-white rounded cursor-pointer"
+                    >
+                      Edit
+                    </button>
+
+                    <button
+                      onClick={() => handleDelete(u.id)}
+                      className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded cursor-pointer"
+                    >
+                      Hapus
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
 
             {users.length === 0 && (
               <tr>
-                <td colSpan={4} className="text-center p-4">
+                <td colSpan={4} className="p-6 text-center text-gray-500">
                   Tidak ada user
                 </td>
               </tr>
@@ -198,7 +241,7 @@ export default function UsersPage() {
       {/* MODAL TAMBAH / EDIT USER */}
       {/* ============================= */}
       {openModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white p-6 rounded-lg w-full max-w-md shadow">
             <h2 className="text-xl font-bold mb-4">
               {isEditing ? "Edit User" : "Tambah User"}
