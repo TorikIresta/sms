@@ -17,7 +17,7 @@ const pool = mysql.createPool({
   password: "root",
   database: "sms",
   connectionLimit: 10,
-  port: 3307,
+  port: 3306,
 });
 
 // quick ping
